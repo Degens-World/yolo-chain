@@ -1,0 +1,12 @@
+[package]
+name = "integration_tests"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+
+[dependencies]
+ergo-lib = { version = "0.28", features = ["arbitrary"] }
+blake2 = "0.10"
+
+[dev-dependencies]
+sigma-test-util = { git = "https://github.com/ergoplatform/sigma-rust", tag = "ergo-lib-v0.28.0" }
