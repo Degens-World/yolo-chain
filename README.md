@@ -16,7 +16,7 @@ And through existing bridge infrastructure, the mined token can reach Ethereum, 
 
 ## What makes it different?
 
-**No premine. No VC allocation. No team tokens.** Every coin comes from mining. 85% of block rewards go to miners, 10% to a development treasury governed by on-chain multisig with timelocks, and 5% to a liquidity fund that seeds trading pools. All of this is enforced by smart contracts, not promises.
+**No premine. No VC allocation. No team tokens.** Every coin comes from mining. 85% of block rewards go to miners, 10% to a development treasury, and 5% to a liquidity fund that seeds trading pools. All of this is enforced by smart contracts, not promises. At launch, the treasury and LP fund are governed by a 2-of-3 multisig with timelocks. A full on-chain governance system (YoloDAO) is built, tested, and ready — when the community is satisfied with how it works, a 90% super-majority vote migrates the treasury from multisig to direct governance control. No hard fork needed.
 
 **Aggressive storage rent.** Coins sitting untouched in a wallet for 12 months start paying a small fee that goes directly to miners. This does two things: it gives miners a permanent income stream beyond block rewards, and it pushes people to actually use the DeFi instead of just hoarding. The cost is negligible for active users — their boxes reset every time they transact. It only affects truly dormant holdings, and even then a 1-coin balance survives over 12 years before being fully consumed.
 
@@ -30,11 +30,13 @@ The monetary system is complete and tested:
 
 - **Emission contract** — controls how every coin enters existence. 50 coins per block, halving annually, with a 1-coin tail emission that ensures miners always have incentive. 19 tests passing against the actual Rust interpreter the chain will run on.
 
-- **Treasury contract** — receives 10% of block rewards. Spending requires a proposal, multisig approval from multiple trusted community members, and a mandatory waiting period before execution. Designed to prevent any single person from raiding the development fund.
+- **Treasury contract** — receives 10% of block rewards. At launch, spending requires multisig approval and a mandatory waiting period. Designed to prevent any single person from raiding the development fund.
 
 - **LP fund contract** — receives 5% of block rewards. Can only be spent on liquidity pools and bridge liquidity — this restriction is enforced by the contract itself, not by governance norms. The fund exists solely to make the token tradeable.
 
-- **Integration testing** — all three contracts proven working together in a simulated multi-block sequence, including across the first halving boundary where the reward drops from 50 to 25 coins. The full pipeline from genesis through ongoing emission is verified.
+- **YoloDAO governance system** — a complete on-chain governance layer, adapted from DuckDAO (battle-tested on Ergo mainnet). 7 contracts, 60 tests, all audited at 8.5/10 or above. YOLO holders lock their coins to receive vYOLO proxy tokens, then vote on treasury spending proposals. Proposals specify a proportion of the treasury (not a fixed amount — can never propose more than exists). 50% support for normal proposals, 90% for large ones. A mandatory discussion window prevents surprise votes. The governance system deploys alongside the multisig at launch, and the community can vote to migrate the treasury to full governance control when ready — no hard fork, just a 90% super-majority vote.
+
+- **Integration testing** — all contracts proven working together in simulated multi-block sequences. Emission pipeline verified across halving boundaries. Full governance lifecycle tested end-to-end: deposit YOLO → lock vYOLO → vote → count → validate → execute treasury withdrawal → redeem. Peg invariant verified at every step.
 
 - **Storage rent economic model** — 274-line simulation covering 560 parameter combinations. The recommended parameters match Ergo's proven annual cost rate but with 4x faster cleanup. Seven sensitivity charts produced. Plain-language holder impact guide completed.
 
@@ -42,7 +44,7 @@ All contract work was done in Rust against sigma-rust 0.28, the same contract in
 
 ## What's next?
 
-**Conversations, not code.** The core economic contracts are done. The next milestones are:
+**The core contracts are done — monetary system, governance, and economic model.** The next milestones are:
 
 1. **Bridge integration scoping** — coordinating with the team building AEther, a bridge protocol connecting Ergo to Cosmos and EVM chains. This is what enables the token to reach Ethereum DEXes and Cosmos liquidity from early on. AEther has already been tested moving assets between Ergo mainnet and Cosmos/Ethereum testnets.
 
@@ -54,8 +56,10 @@ All contract work was done in Rust against sigma-rust 0.28, the same contract in
 
 5. **DeFi deployment planning** — auditing existing Ergo DeFi contracts (AMM, lending, options) for any parameter changes needed at the new chain's faster block time. The contracts themselves are identical; only time-based constants need recalculation.
 
+6. **Governance frontend** — a React app for locking YOLO, creating proposals, voting, and tracking proposal status. The contracts and bot are ready; the frontend makes governance accessible to non-technical holders.
+
 ## The honest assessment
 
-This is an experiment. The contracts are real, the economics are modeled, the bridge infrastructure exists, and the node technology is nearly ready. But no community has formed yet, no miners are committed, and the chain doesn't exist. If it catches, it would be the first ErgoScript fork — a GPU-mineable chain with more functional DeFi at launch than most chains have after years of development. If it doesn't, every line of code is open source and nothing was lost.
+This is an experiment. The contracts are real, the economics are modeled, the governance system is built and audited, the bridge infrastructure exists, and the node technology is nearly ready. But no community has formed yet, no miners are committed, and the chain doesn't exist. If it catches, it would be the first ErgoScript fork — a GPU-mineable chain with more functional DeFi and native on-chain governance at launch than most chains have after years of development. If it doesn't, every line of code is open source and nothing was lost.
 
 No promises. No hype. Just working code and a fair launch.
