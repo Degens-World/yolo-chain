@@ -345,7 +345,28 @@ Mempool collision handling: retry with next vault pair if TX fails due to vault 
 
 ## 7. Voting Layer (DuckDAO pattern, ported)
 
-All four contracts adapted from DuckPools `treasury-system-voting-*` documented in the EKB. Changes: swap QUACKS → vYOLO, retune height constants for 20s blocks, generalize proposal execution.
+### 7.0 Integration with existing treasury/LP contracts
+
+At genesis, treasury and LP fund are governed by the existing 2-of-3 multisig contracts (`treasury_governance.es` in `02-treasury-tests/`, `lp_fund.es` in `03-lp-fund-tests/`). The vYOLO governance system deploys alongside as an **on-chain approval layer**.
+
+**Governance flow (Phase 1 — multisig executes):**
+1. Community locks YOLO → receives vYOLO via peg layer
+2. Proposer creates a governance proposal (e.g., "spend 5% of treasury to fund X")
+3. vYOLO holders vote during the voting window
+4. Counting bot tallies votes → proposal passes or fails on-chain
+5. **Multisig signers review the on-chain result** and execute via existing treasury/LP paths
+6. The governance outcome is a binding community signal; multisig signers are executors, not deciders
+
+**Governance flow (Phase 2 — full decentralization via migration):**
+1. Governance votes to migrate treasury to `treasury.es` (the governance-controlled contract)
+2. Multisig signers review the passed proposal
+3. Multisig executes migration path (treasury_governance.es Path 6+7), transferring the governance NFT to the new `treasury.es`
+4. From this point, `treasury.es` is live — all spending is governance-controlled with no multisig
+5. Same migration path available for LP fund (`lp_fund.es` Path 5+6)
+
+**`treasury.es` is written, tested, and audited now** but deployed dormant — it only activates when the multisig migrates to it. This ensures the end-state contract is battle-tested before it goes live.
+
+All five voting contracts adapted from DuckPools `treasury-system-voting-*` documented in the EKB. Changes: swap QUACKS → vYOLO, retune height constants for 20s blocks, generalize proposal execution.
 
 ### 7.1 Block time retuning
 
@@ -457,16 +478,19 @@ Proposer must stake N vYOLO to create a proposal. V1 default: max(1% of circulat
 
 **Implementation in `counting.es`:** During `isBeforeCounting` phase, initiator's vYOLO stake amount is stored in R8. The initiator's return address is stored in the initiation box (or a dedicated register). The bot handles the refund TX (on completion) or forfeit TX (on cancel, sending vYOLO to treasury).
 
-### 7.7 `treasury.es`
+### 7.7 `treasury.es` (dormant until migration)
 
-Single YOLO-holding box guarded by treasury contract, ported from DuckDAO's `treasury.md`. Authenticated by a singleton treasury NFT at `tokens(0)`.
+Governance-controlled treasury — replaces the 2-of-3 multisig `treasury_governance.es` (in `02-treasury-tests/`) after migration. **Deployed dormant at genesis; activated when multisig executes migration path (treasury_governance.es Path 6+7), transferring the governance NFT to this contract.**
 
-**Funding (no genesis allocation — earned from block 1):**
+Single YOLO-holding box guarded by treasury contract, ported from DuckDAO's `treasury.md`. Authenticated by a singleton treasury NFT at `tokens(0)`. No admin keys, no multisig — all spending controlled by on-chain vYOLO voting.
+
+**Funding (post-migration):**
+- Inherits all YOLO from the multisig treasury via migration
 - Emission contract's 10% treasury split (per `emission.es`) — ~5 coins/block initially, ~21,600 coins/day
 - Voluntary contributions (anyone can add YOLO via deposit branch)
 - Forfeited proposer stakes (see §7.6)
 
-First meaningful proposal is viable within weeks of launch.
+**Pre-migration:** Treasury funds are managed by the existing 2-of-3 multisig, with governance proposals serving as binding community signals that the multisig executes.
 
 **Deposit branch (`INPUTS(0) == SELF`):** Accepts YOLO additions. Script invariant: successor retains identical proposition bytes. Value monotonicity: successor holds ≥ current value.
 
