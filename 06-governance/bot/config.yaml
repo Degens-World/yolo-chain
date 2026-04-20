@@ -1,0 +1,17 @@
+# Voting Bot Configuration
+# Populate token IDs from PARAMETERS.md after genesis deployment.
+
+node_url: "http://localhost:9053"
+api_key: ""  # from .secrets
+poll_interval_seconds: 60
+
+# Token IDs (32-byte hex, from genesis minting)
+counter_nft_id: ""
+treasury_nft_id: ""
+proposal_token_id: ""
+valid_vote_id: ""
+vyolo_id: ""
+
+# Vault pairs for storage rent heartbeat (5 state NFT IDs)
+vault_state_nft_ids: []
+reserve_nft_ids: []
