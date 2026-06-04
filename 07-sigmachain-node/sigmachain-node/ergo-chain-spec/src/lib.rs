@@ -28,6 +28,8 @@ use std::net::SocketAddr;
 use ergo_primitives::digest::Digest32;
 use ergo_ser::address::NetworkPrefix;
 
+pub mod yolo_genesis_scripts;
+
 fn parse_id_hex(s: &str) -> Digest32 {
     Digest32::from_bytes(parse_bytes32_hex(s))
 }

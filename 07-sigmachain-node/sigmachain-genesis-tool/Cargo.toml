@@ -1,0 +1,16 @@
+[package]
+name = "sigmachain-genesis-tool"
+description = "One-shot compiler that turns the YOLO ErgoScript sources (emission, treasury_accumulation, lp_accumulation) into the ErgoTree bytes baked into ergo-chain-spec as the SigmaChain genesis state. Uses sigma-rust's ergoscript-compiler in canonical mode so any contract that hits a Rust-compiler edge case automatically falls back to the local Scala node and guarantees byte-parity."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "sigmachain-genesis-tool"
+path = "src/main.rs"
+
+[dependencies]
+ergoscript-compiler = { git = "https://github.com/cannonQ/sigma-rust.git", rev = "7ea8dc7d" }
+ergotree-ir         = { git = "https://github.com/cannonQ/sigma-rust.git", rev = "7ea8dc7d" }
+hex                 = "0.4"
