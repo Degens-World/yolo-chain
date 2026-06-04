@@ -54,7 +54,7 @@ from contract_sim import (
 )
 
 
-GENESIS_VALUE = model.genesis_box_value()  # 177,412,882.5 coins
+GENESIS_VALUE = model.genesis_box_value()  # 176,525,325 coins
 
 
 # ============================================================
@@ -91,15 +91,20 @@ class CrossOracleTests(unittest.TestCase):
             h += 97_337  # prime-ish step to avoid boundary-only coverage
 
     def test_block_reward_lookup_matches_shift_for_defined_epochs(self):
-        """Contract's if/else chain must produce the same as shift-based formula."""
-        for epoch in range(0, 6):
+        """Contract's if/else chain must produce the same as shift-based
+        formula across the 5 explicit halvings (0..4)."""
+        for epoch in range(0, 5):
             h = epoch * BLOCKS_PER_HALVING
             contract_val = block_reward_contract(h)
             shift_val = INITIAL_REWARD >> epoch
             self.assertEqual(contract_val, max(shift_val, MIN_REWARD))
 
-    def test_block_reward_lookup_hits_floor_for_epoch_6_plus(self):
-        for epoch in range(6, MAX_HALVINGS + 5):
+    def test_block_reward_lookup_hits_floor_for_epoch_5_plus(self):
+        """halvings >= 5 should drop straight to MIN_REWARD (1 YOLO).
+        The contract removed the halvings==5 arm at 1.5625 YOLO so the
+        non-integral 1.5625 × BLOCKS_PER_HALVING never enters the
+        total supply."""
+        for epoch in range(5, MAX_HALVINGS + 5):
             h = epoch * BLOCKS_PER_HALVING
             self.assertEqual(block_reward_contract(h), MIN_REWARD)
 
@@ -158,9 +163,11 @@ class RoundingTests(unittest.TestCase):
     def test_specific_rounding_at_each_epoch(self):
         """
         At MIN_REWARD = 1e9, split is exact (100 divides 1e9 via 10M and 5M).
-        At INITIAL_REWARD = 5e10, same. Every epoch-aligned reward happens to
-        be evenly divisible by 100 because 1.5625e9 = 5e10 / 32, and 5e10 is
-        divisible by 200 already; the halvings only introduce factors of 2.
+        At INITIAL_REWARD = 5e10, same. Every epoch-aligned reward through
+        epoch 4 is evenly divisible by 100 (5e10 is divisible by 200; the
+        halvings only introduce factors of 2). At epoch 5 the contract
+        drops straight to MIN_REWARD = 1e9 (the halvings==5 case at
+        1.5625 YOLO was removed — see emission.es header).
         """
         expected = [
             # (epoch, miner, treasury, lp) in nanocoins, from emission_model.py
@@ -169,8 +176,8 @@ class RoundingTests(unittest.TestCase):
             (2, 10_625_000_000, 1_250_000_000,   625_000_000),   # 12.5 coins
             (3,  5_312_500_000,   625_000_000,   312_500_000),   # 6.25 coins
             (4,  2_656_250_000,   312_500_000,   156_250_000),   # 3.125 coins
-            (5,  1_328_125_000,   156_250_000,    78_125_000),   # 1.5625 coins
-            (6,    850_000_000,   100_000_000,    50_000_000),   # 1 coin floor
+            (5,    850_000_000,   100_000_000,    50_000_000),   # 1 coin floor
+            (6,    850_000_000,   100_000_000,    50_000_000),   # 1 coin
             (7,    850_000_000,   100_000_000,    50_000_000),   # 1 coin
             (10,   850_000_000,   100_000_000,    50_000_000),   # 1 coin
             (19,   850_000_000,   100_000_000,    50_000_000),   # 1 coin
@@ -243,12 +250,29 @@ class NormalPathBoundaryTests(unittest.TestCase):
         self._spend_at(BLOCKS_PER_HALVING)
 
     def test_reward_exactly_halves_between_H_minus_1_and_H(self):
-        for epoch in range(1, 6):  # Epochs where reward is actually halving
+        # Halving boundaries 1..4 are the geometric halvings (50→25,
+        # 25→12.5, 12.5→6.25, 6.25→3.125). At boundary 5 the contract
+        # drops to MIN_REWARD = 1 YOLO instead of halving to 1.5625,
+        # so r_before / r_at = 3.125 — not 2. Boundary 5 is exercised
+        # by test_first_block_of_epoch_5_hits_floor_directly below.
+        for epoch in range(1, 5):
             boundary = epoch * BLOCKS_PER_HALVING
             r_before = block_reward_contract(boundary - 1)
             r_at = block_reward_contract(boundary)
             self.assertEqual(r_before, r_at * 2,
                              f"Epoch {epoch}: r_before={r_before}, r_at={r_at}")
+
+    def test_first_block_of_epoch_5_hits_floor_directly(self):
+        # Boundary 5 deliberately collapses from 3.125 YOLO straight to
+        # MIN_REWARD = 1 YOLO. Removing the halvings==5 (1.5625 YOLO)
+        # arm is what keeps the total genesis supply integral — pin
+        # the transition shape here so a future re-introduction is
+        # caught.
+        boundary = 5 * BLOCKS_PER_HALVING
+        r_before = block_reward_contract(boundary - 1)
+        r_at = block_reward_contract(boundary)
+        self.assertEqual(r_before, 3_125_000_000)
+        self.assertEqual(r_at, MIN_REWARD)
 
     def test_reward_stable_between_H_and_H_plus_1(self):
         for epoch in range(1, MAX_HALVINGS):
@@ -745,8 +769,14 @@ class BoundsTests(unittest.TestCase):
         self.assertLess(GENESIS_VALUE, 2**63 - 1)
 
     def test_genesis_box_value_matches_spec(self):
-        """From PARAMETERS.md: ~177,412,882.5 coins."""
-        expected = 177_412_882_500_000_000
+        """Total supply across 5 explicit halvings + 15 tail-rate epochs.
+
+        50 × 1577880 + 25 × 1577880 + 12.5 × 1577880 + 6.25 × 1577880 +
+        3.125 × 1577880 + 15 × 1 × 1577880 = 176,525,325 YOLO. Cleanly
+        integral because the halvings == 5 (1.5625 YOLO) arm was
+        removed; see emission.es header. Previously 177,412,882.5
+        YOLO before the .5 fix."""
+        expected = 176_525_325_000_000_000
         self.assertEqual(GENESIS_VALUE, expected)
 
     def test_reward_monotonically_non_increasing(self):

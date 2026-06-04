@@ -19,7 +19,16 @@ BLOCKS_PER_YEAR = int(365.25 * 24 * 3600 / BLOCK_TIME_SECONDS)  # 1,577,880
 
 INITIAL_REWARD = 50 * NANOCOIN          # 50 coins/block in nanocoins
 BLOCKS_PER_HALVING = BLOCKS_PER_YEAR    # halves every ~1 year
-MAX_HALVINGS = 20                        # after this, minimum reward applies
+NUM_EXPLICIT_HALVINGS = 5                # halvings 0..4 produce 50, 25, 12.5,
+                                         # 6.25, 3.125 YOLO; halvings >= 5 floor
+                                         # at MIN_REWARD. Stops one halving
+                                         # earlier than initialReward/32 = 1.5625
+                                         # so 1.5625 * 1577880 = 2,465,437.5
+                                         # never enters the total — keeps the
+                                         # supply integral.
+MAX_HALVINGS = 20                        # display / loop bound only; the
+                                         # contract-matching reward switch is
+                                         # NUM_EXPLICIT_HALVINGS above.
 MIN_REWARD = 1 * NANOCOIN               # 1 coin — floor reward
 
 # Split percentages (must sum to 100)
@@ -32,9 +41,16 @@ TREASURY_PCT = 10
 # ============================================================
 
 def block_reward(height: int) -> int:
-    """Block reward in nanocoins at a given height."""
+    """Block reward in nanocoins at a given height.
+
+    Matches emission.es: halvings 0..NUM_EXPLICIT_HALVINGS-1 (=0..4) shift
+    right by 2^halvings; halvings >= NUM_EXPLICIT_HALVINGS floor at
+    MIN_REWARD. Stopping at 5 explicit halvings (rather than 6 = shift
+    to 1.5625 YOLO) keeps every period total integral in YOLO, see
+    NUM_EXPLICIT_HALVINGS doc.
+    """
     halvings = height // BLOCKS_PER_HALVING
-    if halvings >= MAX_HALVINGS:
+    if halvings >= NUM_EXPLICIT_HALVINGS:
         return MIN_REWARD
     reward = INITIAL_REWARD >> halvings  # integer right-shift = divide by 2^n
     return max(reward, MIN_REWARD)
@@ -55,17 +71,14 @@ def total_supply() -> int:
     """
     Calculate exact total supply by summing every halving epoch.
     Does NOT simulate block-by-block — uses epoch math.
+
+    Routes through `block_reward` so the contract-matching switch
+    (NUM_EXPLICIT_HALVINGS) is the single source of truth.
     """
     total = 0
     for h in range(MAX_HALVINGS):
-        reward = INITIAL_REWARD >> h
-        if reward < MIN_REWARD:
-            # remaining epochs all pay MIN_REWARD
-            remaining_epochs = MAX_HALVINGS - h
-            # assume chain runs ~100 years max for tail emission
-            # (in practice, tail emission is open-ended)
-            total += MIN_REWARD * BLOCKS_PER_HALVING * remaining_epochs
-            break
+        representative_height = h * BLOCKS_PER_HALVING
+        reward = block_reward(representative_height)
         total += reward * BLOCKS_PER_HALVING
     # Tail emission after MAX_HALVINGS (open-ended, but bound for display)
     # Not included — total_supply() returns the sum of the first MAX_HALVINGS epochs only
@@ -91,16 +104,11 @@ def emission_box_value_at(height: int) -> int:
     blocks_in_partial = height % BLOCKS_PER_HALVING
 
     for h in range(min(epoch, MAX_HALVINGS)):
-        reward = INITIAL_REWARD >> h
-        reward = max(reward, MIN_REWARD)
+        reward = block_reward(h * BLOCKS_PER_HALVING)
         value -= reward * BLOCKS_PER_HALVING
 
     # Partial epoch
-    if epoch < MAX_HALVINGS:
-        reward = INITIAL_REWARD >> epoch
-        reward = max(reward, MIN_REWARD)
-    else:
-        reward = MIN_REWARD
+    reward = block_reward(height) if epoch < MAX_HALVINGS else MIN_REWARD
     value -= reward * blocks_in_partial
 
     return value
@@ -114,9 +122,7 @@ def final_emission_height() -> int:
     remaining = genesis_box_value()
     height = 0
     for h in range(MAX_HALVINGS):
-        reward = INITIAL_REWARD >> h
-        if reward < MIN_REWARD:
-            reward = MIN_REWARD
+        reward = block_reward(h * BLOCKS_PER_HALVING)
         epoch_total = reward * BLOCKS_PER_HALVING
         if remaining <= epoch_total:
             # exhaustion happens in this epoch
@@ -173,10 +179,8 @@ def print_schedule():
 
     cumulative = 0
     for h in range(MAX_HALVINGS):
-        reward = INITIAL_REWARD >> h
-        if reward < MIN_REWARD:
-            reward = MIN_REWARD
         start = h * BLOCKS_PER_HALVING
+        reward = block_reward(start)
         end = (h + 1) * BLOCKS_PER_HALVING - 1
         epoch_supply = reward * BLOCKS_PER_HALVING
         cumulative += epoch_supply

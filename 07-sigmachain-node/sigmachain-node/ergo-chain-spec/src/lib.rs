@@ -455,8 +455,14 @@ pub struct YoloEmissionParams {
     /// emission.es line 39: `minReward: Long = 1000000000L`.
     pub min_reward: u64,
     /// Number of halving steps before the tail floor kicks in.
-    /// emission.es line 54-60 unrolls 6 halvings (50 → 25 → 12.5 →
-    /// 6.25 → 3.125 → 1.5625 nano), then `minReward` thereafter.
+    /// emission.es unrolls 5 halvings (50 → 25 → 12.5 → 6.25 →
+    /// 3.125 YOLO at halvings 0..4 respectively), then `minReward`
+    /// at halvings >= 5. The 6th halving (1.5625 YOLO) was removed
+    /// because 1.5625 × blocks_per_halving = 2,465,437.5 YOLO is
+    /// non-integral — 1,577,880 is divisible by 8 but not 16 — and
+    /// the fractional .5 would propagate into the genesis supply
+    /// total. Stopping one halving earlier keeps every period
+    /// integral in YOLO units.
     pub num_halvings: u32,
     /// Treasury share in basis points (1 bp = 0.01%). emission.es
     /// line 68: `treasuryReward = blockReward * 10L / 100L` ⇒ 1000 bps.
@@ -473,7 +479,7 @@ impl YoloEmissionParams {
             initial_reward: 50_000_000_000,
             blocks_per_halving: 1_577_880,
             min_reward: 1_000_000_000,
-            num_halvings: 6,
+            num_halvings: 5,
             treasury_share_bps: 1_000,
             lp_share_bps: 500,
         }
@@ -1406,26 +1412,31 @@ mod tests {
 
     #[test]
     fn yolo_emission_halves_at_each_boundary() {
-        // emission.es line 51-60: halvings = HEIGHT / blocksPerHalving,
-        // then 50 / 2^halvings until min_reward.
+        // emission.es line 51-64: halvings = HEIGHT / blocksPerHalving,
+        // then 50 / 2^halvings for halvings 0..4. The arm at
+        // halvings == 5 (1.5625 YOLO) was removed because
+        // 1.5625 × 1_577_880 = 2,465,437.5 YOLO is non-integral; see
+        // YoloEmissionParams::num_halvings doc.
         let e = YoloEmissionParams::sigmachain_testnet();
         let h = e.blocks_per_halving;
         assert_eq!(e.block_reward_at_height(h), 25_000_000_000);
         assert_eq!(e.block_reward_at_height(2 * h), 12_500_000_000);
         assert_eq!(e.block_reward_at_height(3 * h), 6_250_000_000);
         assert_eq!(e.block_reward_at_height(4 * h), 3_125_000_000);
-        assert_eq!(e.block_reward_at_height(5 * h), 1_562_500_000);
+        // Boundary 5 collapses to min_reward (1 YOLO) — not 1.5625.
+        assert_eq!(e.block_reward_at_height(5 * h), e.min_reward);
     }
 
     #[test]
-    fn yolo_emission_tail_floor_kicks_in_at_sixth_halving() {
-        // After 6 halvings, the geometric value would be 50 / 64 =
-        // 0.78125 nano, below the 1-nano floor. emission.es line 60
-        // collapses to minReward = 1_000_000_000 from this height on.
+    fn yolo_emission_tail_floor_kicks_in_at_fifth_halving() {
+        // emission.es drops straight from 3.125 YOLO at halving 4 to
+        // min_reward = 1 YOLO at halving 5. The 1.5625 YOLO arm that
+        // would have lived at halving 5 was removed to keep the total
+        // genesis supply integral.
         let e = YoloEmissionParams::sigmachain_testnet();
         let h = e.blocks_per_halving;
+        assert_eq!(e.block_reward_at_height(5 * h), 1_000_000_000);
         assert_eq!(e.block_reward_at_height(6 * h), 1_000_000_000);
-        assert_eq!(e.block_reward_at_height(7 * h), 1_000_000_000);
         assert_eq!(e.block_reward_at_height(100 * h), 1_000_000_000);
     }
 

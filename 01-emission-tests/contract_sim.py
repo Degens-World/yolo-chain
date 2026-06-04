@@ -64,15 +64,20 @@ class Box:
 # BLOCK REWARD (mirrors the ErgoScript lookup table exactly)
 # ============================================================
 #
-# The contract's lookup differs subtly from emission_model.py's shift:
-#   emission_model.py:  reward = INITIAL_REWARD >> halvings, max with MIN_REWARD,
-#                       capped at MAX_HALVINGS returning MIN_REWARD.
-#   emission.es:        explicit if/else for halvings 0..5, else minReward,
-#                       then `if (computed > minReward) computed else minReward` clamp.
+# The contract's lookup mirrors emission.es's explicit if/else cascade:
+#   emission.es:  if/else for halvings 0..4 producing 50, 25, 12.5, 6.25,
+#                 3.125 YOLO; halvings >= 5 returns minReward (1 YOLO) so
+#                 the floor kicks in one halving earlier than a pure shift
+#                 would. The `initialReward / 32L` arm was removed so the
+#                 fractional 1.5625 × blocks_per_halving never enters the
+#                 supply total — keeps every period total integral in YOLO.
+#   emission_model.py:  routes through the same NUM_EXPLICIT_HALVINGS = 5
+#                 switch so the shift / floor logic agrees with the
+#                 contract at every height.
 #
-# Both must produce identical outputs for all heights. We reproduce the contract's
-# computation here (not the shift version) so a divergence between them would
-# show up as a cross-check failure.
+# Both must produce identical outputs for all heights. We reproduce the
+# contract's computation here (not the shift version) so a divergence
+# between them would show up as a cross-check failure.
 
 def block_reward_contract(height: int) -> int:
     """Exactly mirrors the `blockReward` val in emission.es."""
@@ -88,8 +93,6 @@ def block_reward_contract(height: int) -> int:
         computed = INITIAL_REWARD // 8
     elif halvings == 4:
         computed = INITIAL_REWARD // 16
-    elif halvings == 5:
-        computed = INITIAL_REWARD // 32
     else:
         computed = MIN_REWARD
 

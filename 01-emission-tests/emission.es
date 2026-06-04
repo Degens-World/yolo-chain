@@ -51,12 +51,18 @@
   val halvings: Int = HEIGHT / blocksPerHalving
 
   val blockReward: Long = {
+    // 5 halvings end at 3.125 YOLO/block, then the contract floors at
+    // minReward = 1 YOLO/block forever. The halvings == 5 case at
+    // initialReward / 32L (= 1.5625 YOLO) was removed deliberately:
+    // 1.5625 × 1577880 = 2,465,437.5 YOLO is non-integral (1577880 is
+    // divisible by 8 but not 16), which propagated a .5 fractional
+    // surplus into the total genesis supply. Stopping one halving
+    // earlier keeps every period total integral in YOLO units.
     val computed: Long = if (halvings <= 0) initialReward
       else if (halvings == 1) initialReward / 2L
       else if (halvings == 2) initialReward / 4L
       else if (halvings == 3) initialReward / 8L
       else if (halvings == 4) initialReward / 16L
-      else if (halvings == 5) initialReward / 32L
       else minReward
 
     // Floor: never below minReward

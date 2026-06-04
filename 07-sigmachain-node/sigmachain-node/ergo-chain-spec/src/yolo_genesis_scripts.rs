@@ -26,20 +26,22 @@
 ///
 /// Provenance at generation time: Scala node fallback (Rust compiler
 /// diverged on this contract — canonical-mode swapped to the node's
-/// bytes, matching Scala exactly).
+/// bytes, matching Scala exactly). 438 bytes after the .5-fix rev
+/// of emission.es (removed the halvings == 5 / 1.5625 YOLO arm so
+/// the genesis supply stays integral).
 pub const EMISSION_ERGO_TREE_HEX: &str = concat!(
-    "102004b0cec00104000580d0dbc3f40204020580e8eda1ba0104040580f4f6905d04060580ba",
-    "bbc82e04080580dd9da417040a05c0ee8ed20b0580a8d6b9070580a8d6b9070580a8d6b90704",
-    "000402040004040400040004000502051405c801050a05c801051405c801050a05c801d80ed6",
-    "01c1a7d6029da37300d603959072027301730295937202730373049593720273057306959372",
-    "0273077308959372027309730a95937202730b730c730dd60495917203730e7203730fd605b2",
-    "a5731000d606c17205d607c27205d608e4c6a7040ed609b2a5731100d60ac17209d60be4c6a7",
-    "050ed60c8cb2db6308a773120001d60ddb63087205d60eb2a5731300d1ed91a38cc7a701eced",
-    "eded9272017204edededededed91b1720d7314938cb2720d73150001720c938cb2720d731600",
-    "027317937207c2a79372069972017204ed93e4c67205040e720893e4c67205050e720b938cc7",
-    "720501a3ed93720a9d9c72047318731993cbc272097208ed93c1720e9d9c7204731a731b93cb",
-    "c2720e720bededed8f72017204ed9372069d9c7201731c731d93cb72077208ed93720a9d9c72",
-    "01731e731f93cbc27209720bafa5d9010f63afdb6308720fd901114d0e948c721101720c",
+    "101e04b0cec00104000580d0dbc3f40204020580e8eda1ba0104040580f4f6905d04060580ba",
+    "bbc82e04080580dd9da4170580a8d6b9070580a8d6b9070580a8d6b907040004020400040404",
+    "00040004000502051405c801050a05c801051405c801050a05c801d80ed601c1a7d6029da373",
+    "00d6039590720273017302959372027303730495937202730573069593720273077308959372",
+    "027309730a730bd60495917203730c7203730dd605b2a5730e00d606c17205d607c27205d608",
+    "e4c6a7040ed609b2a5730f00d60ac17209d60be4c6a7050ed60c8cb2db6308a773100001d60d",
+    "db63087205d60eb2a5731100d1ed91a38cc7a701ecededed9272017204edededededed91b172",
+    "0d7312938cb2720d73130001720c938cb2720d731400027315937207c2a79372069972017204",
+    "ed93e4c67205040e720893e4c67205050e720b938cc7720501a3ed93720a9d9c720473167317",
+    "93cbc272097208ed93c1720e9d9c72047318731993cbc2720e720bededed8f72017204ed9372",
+    "069d9c7201731a731b93cb72077208ed93720a9d9c7201731c731d93cbc27209720bafa5d901",
+    "0f63afdb6308720fd901114d0e948c721101720c",
 );
 
 /// ErgoTree wire bytes for `02-treasury-tests/treasury_accumulation.es`.
@@ -94,7 +96,10 @@ mod tests {
         // Pin against drift — if a future regenerate run produces a
         // different size, the contract source changed and Phase 4
         // genesis box construction needs to be reviewed.
-        assert_eq!(emission_ergo_tree_bytes().len(), 454);
+        // emission.es is 438 B (post-.5-fix; the older 6-halving rev
+        // was 454 B before the halvings == 5 / 1.5625 YOLO arm was
+        // removed).
+        assert_eq!(emission_ergo_tree_bytes().len(), 438);
         assert_eq!(treasury_accumulation_ergo_tree_bytes().len(), 72);
         assert_eq!(lp_accumulation_ergo_tree_bytes().len(), 72);
     }
