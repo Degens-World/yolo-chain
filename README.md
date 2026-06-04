@@ -58,7 +58,7 @@ All contract work was done in Rust against sigma-rust 0.28, the same contract in
 
 6. **Governance frontend** — a React app for locking YOLO, creating proposals, voting, and tracking proposal status. The contracts and bot are ready; the frontend makes governance accessible to non-technical holders.
 
-## The honest assessment
+## Closing
 
 This is an experiment. The contracts are real, the economics are modeled, the governance system is built and audited, the bridge infrastructure exists, and the node technology is nearly ready. But no community has formed yet, no miners are committed, and the chain doesn't exist. If it catches, it would be the first ErgoScript fork — a GPU-mineable chain with more functional DeFi and native on-chain governance at launch than most chains have after years of development. If it doesn't, every line of code is open source and nothing was lost.
 
