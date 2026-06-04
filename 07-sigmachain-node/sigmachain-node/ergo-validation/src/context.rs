@@ -57,6 +57,39 @@ impl ProtocolParams {
         }
     }
 
+    /// SigmaChain testnet defaults. Differences from `mainnet_default`:
+    ///
+    /// - `storage_period = 1_577_880` blocks (1 year at 20 s blocks),
+    ///   down from Ergo's 1_051_200 (4 years at 120 s). Per the YOLO
+    ///   storage rent design — boxes become rent-eligible after 1
+    ///   year of idleness rather than 4.
+    /// - `storage_fee_factor = 312_500` nanoYOLO per byte per
+    ///   storage_period, exactly 1/4 of Ergo's 1_250_000. Combined
+    ///   with the 1/4 shorter cycle, the *annualized* storage cost
+    ///   per byte is identical to Ergo's — only the collection
+    ///   cadence speeds up.
+    ///
+    /// The miner-only consensus rule for storage rent claims (every
+    /// non-coinbase rent claim must be rejected at block validation)
+    /// is NOT yet wired here — that requires a block-level check
+    /// outside per-tx validation. Phase 4 lands it together with the
+    /// 4-output coinbase builder.
+    pub fn sigmachain_testnet_default() -> Self {
+        Self {
+            min_value_per_byte: 360,
+            max_block_cost: 8_001_091,
+            max_block_size: 524_288,
+            max_box_size: 4096,
+            max_tokens_per_box: 122,
+            input_cost: 2_000,
+            data_input_cost: 100,
+            output_cost: 100,
+            token_access_cost: 100,
+            storage_fee_factor: 312_500,
+            storage_period: 1_577_880,
+        }
+    }
+
     /// Convert from the per-epoch active set persisted in `voted_params`.
     /// Total and infallible: the parser / persisted-codec rejects
     /// out-of-range values up front, so by the time we reach
@@ -116,6 +149,24 @@ impl ProtocolParams {
             storage_fee_factor: active.storage_fee_factor,
             storage_period: 1_051_200,
         }
+    }
+
+    /// Network-aware variant of [`Self::from_active`]. Differs from the
+    /// vanilla `from_active` only in `storage_period`, which is the
+    /// non-votable protocol constant that diverges between Ergo and
+    /// SigmaChain (4 years vs. 1 year of block-count). Production
+    /// block-validation paths that know which chain they're on should
+    /// prefer this entry point.
+    pub fn from_active_for_network(
+        active: &crate::active_params::ActiveProtocolParameters,
+        network: ergo_chain_spec::Network,
+    ) -> Self {
+        let mut p = Self::from_active(active);
+        p.storage_period = match network {
+            ergo_chain_spec::Network::Mainnet | ergo_chain_spec::Network::Testnet => 1_051_200,
+            ergo_chain_spec::Network::SigmaChainTestnet => 1_577_880,
+        };
+        p
     }
 }
 
@@ -206,5 +257,80 @@ mod tests {
         assert_eq!(p.input_cost, 2_000);
         assert_eq!(p.max_block_cost, 1_000_000);
         assert_eq!(p.min_value_per_byte, 360);
+    }
+
+    // ----- SigmaChain storage rent (Phase 3.4) -----
+
+    #[test]
+    fn sigmachain_testnet_default_storage_period_is_one_year_at_20s() {
+        // 1_577_880 blocks × 20 s = 31_557_600 s = exactly 365.25 days
+        // (Julian year), matching emission.es:37 "blocksPerHalving:
+        // Int = 1577880 ~1 year at 20s blocks". The storage rent
+        // cycle locks to the same cadence as halvings.
+        let p = ProtocolParams::sigmachain_testnet_default();
+        assert_eq!(p.storage_period, 1_577_880);
+        let seconds_per_period = (p.storage_period as u64) * 20;
+        let seconds_per_julian_year = 365 * 86_400 + 86_400 / 4; // 31_557_600
+        assert_eq!(seconds_per_period, seconds_per_julian_year);
+    }
+
+    #[test]
+    fn sigmachain_testnet_default_storage_fee_factor_matches_ergo_annualized() {
+        // Ergo: 1_250_000 nano / byte per 4-year cycle = 312_500
+        // nano / byte / year. SigmaChain: 312_500 nano / byte per
+        // 1-year cycle. Annualized per-byte cost is identical; only
+        // the collection cadence speeds up.
+        let p = ProtocolParams::sigmachain_testnet_default();
+        let ergo = ProtocolParams::mainnet_default();
+        assert_eq!(p.storage_fee_factor, 312_500);
+        assert_eq!(ergo.storage_fee_factor, 1_250_000);
+        let ergo_annualized = ergo.storage_fee_factor / 4;
+        assert_eq!(p.storage_fee_factor, ergo_annualized);
+    }
+
+    #[test]
+    fn sigmachain_testnet_default_keeps_protocol_constants() {
+        // Non-storage-rent fields should match mainnet defaults — this
+        // chunk only changes storage_period + storage_fee_factor.
+        let p = ProtocolParams::sigmachain_testnet_default();
+        let m = ProtocolParams::mainnet_default();
+        assert_eq!(p.min_value_per_byte, m.min_value_per_byte);
+        assert_eq!(p.max_block_cost, m.max_block_cost);
+        assert_eq!(p.max_block_size, m.max_block_size);
+        assert_eq!(p.max_box_size, m.max_box_size);
+        assert_eq!(p.max_tokens_per_box, m.max_tokens_per_box);
+        assert_eq!(p.input_cost, m.input_cost);
+        assert_eq!(p.data_input_cost, m.data_input_cost);
+        assert_eq!(p.output_cost, m.output_cost);
+        assert_eq!(p.token_access_cost, m.token_access_cost);
+    }
+
+    #[test]
+    fn from_active_for_network_picks_right_storage_period() {
+        use ergo_chain_spec::Network;
+        let active = baseline_active();
+        // Mainnet / testnet use Ergo's 4-year period.
+        let m = ProtocolParams::from_active_for_network(&active, Network::Mainnet);
+        let t = ProtocolParams::from_active_for_network(&active, Network::Testnet);
+        assert_eq!(m.storage_period, 1_051_200);
+        assert_eq!(t.storage_period, 1_051_200);
+        // SigmaChain swaps to the 1-year period.
+        let s = ProtocolParams::from_active_for_network(&active, Network::SigmaChainTestnet);
+        assert_eq!(s.storage_period, 1_577_880);
+    }
+
+    #[test]
+    fn from_active_for_network_preserves_voted_storage_fee_factor() {
+        use ergo_chain_spec::Network;
+        // storage_fee_factor is a voted parameter — from_active reads
+        // it from the active set, not from the per-network default.
+        // For SigmaChain, the initial active set will carry 312_500
+        // (see Phase 4 genesis active params); for the test we pass a
+        // baseline with the Ergo value to confirm the voted value
+        // wins.
+        let active = baseline_active();
+        assert_eq!(active.storage_fee_factor, 1_250_000);
+        let s = ProtocolParams::from_active_for_network(&active, Network::SigmaChainTestnet);
+        assert_eq!(s.storage_fee_factor, 1_250_000);
     }
 }
