@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>$YOLO Chain — Project Status</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-hi: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --accent: #f0883e;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  h1 .accent { color: var(--accent); }
+  .subtitle {
+    color: var(--muted);
+    margin-top: 8px;
+    font-size: 16px;
+  }
+  .meta {
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  h2 {
+    font-size: 22px;
+    margin-top: 40px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  h3 {
+    font-size: 17px;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+  .lead {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    border-radius: 6px;
+    margin-bottom: 24px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .stat .num {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .stat .label {
+    color: var(--muted);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  th {
+    background: var(--panel-hi);
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 12px;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.center, th.center { text-align: center; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge.done { background: rgba(63, 185, 80, 0.15); color: var(--green); border: 1px solid rgba(63, 185, 80, 0.4); }
+  .badge.next { background: rgba(88, 166, 255, 0.15); color: var(--blue); border: 1px solid rgba(88, 166, 255, 0.4); }
+  .badge.hold { background: rgba(210, 153, 34, 0.15); color: var(--yellow); border: 1px solid rgba(210, 153, 34, 0.4); }
+  .badge.todo { background: rgba(125, 133, 144, 0.15); color: var(--muted); border: 1px solid rgba(125, 133, 144, 0.4); }
+  code {
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    background: var(--panel-hi);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+  }
+  ul { padding-left: 20px; }
+  li { margin: 4px 0; }
+  .phase {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 12px 0;
+  }
+  .phase h3 {
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .phase-status {
+    margin-left: auto;
+  }
+  footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  .audit-9 { color: var(--green); font-weight: 600; }
+  .audit-8 { color: var(--green); font-weight: 600; }
+  .audit-7 { color: var(--yellow); font-weight: 600; }
+  .progress-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--panel-hi);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 4px 0;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1><span class="accent">$YOLO</span> Chain — Project Status</h1>
+  <div class="subtitle">A GPU-mineable blockchain with full DeFi and on-chain governance from genesis</div>
+  <div class="meta">Updated 2026-06-04 · Branch: main · Repo: github.com/Degens-World/yolo-chain</div>
+</header>
+
+<div class="lead">
+  <strong>BREAKING — 2026-06-02:</strong> arkadianet/ergo v0.3.0 dropped — a from-scratch Rust implementation of an Ergo full node. Reached mainnet sync to tip at height 1,771,976 on 2026-04-26. Supports external miner protocol, full archive mode, HD wallet, dual-licensed MIT/Apache. <strong>This is the critical path unblock.</strong> The Rust node we've been waiting for now exists.
+</div>
+
+<div class="lead">
+  <strong>Current state:</strong> All on-chain contracts complete, tested, and audited. Monetary system, treasury/LP governance, storage rent, and YoloDAO governance system are production-ready. <strong>Rust node now exists (alpha)</strong> — forking it for SigmaChain is the next move.
+</div>
+
+<div class="grid">
+  <div class="stat">
+    <div class="num">7</div>
+    <div class="label">Governance Contracts</div>
+  </div>
+  <div class="stat">
+    <div class="num">60</div>
+    <div class="label">Tests Passing</div>
+  </div>
+  <div class="stat">
+    <div class="num">8.5–9</div>
+    <div class="label">Audit Range (out of 10)</div>
+  </div>
+  <div class="stat">
+    <div class="num">177M</div>
+    <div class="label">Total YOLO Supply (coins)</div>
+  </div>
+  <div class="stat">
+    <div class="num">20s</div>
+    <div class="label">Block Time</div>
+  </div>
+  <div class="stat">
+    <div class="num">85/10/5</div>
+    <div class="label">Miner / Treasury / LP Split</div>
+  </div>
+</div>
+
+<h2>Completed Workstreams</h2>
+
+<div class="phase">
+  <h3>01 — Emission Contract <span class="phase-status badge done">Complete</span></h3>
+  <p>The contract that mints every coin. 50 coins/block, halving annually, 1-coin tail emission. Validates against the actual sigma-rust interpreter the chain will run on.</p>
+  <ul>
+    <li>62 Python semantic tests + 19 ErgoTree evaluation tests, all passing</li>
+    <li>Halving boundaries verified across 6 epochs + tail emission</li>
+    <li>Terminal path tested (NFT burn on exhaustion)</li>
+    <li>i64 overflow safety confirmed (52x headroom)</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>02 — Treasury Governance (Multisig) <span class="phase-status badge done">Complete</span></h3>
+  <p>The 2-of-3 multisig contract that governs the 10% treasury allocation at launch. 7 spending paths including approval, execution, cancellation, freeze, and migration to governance.</p>
+  <ul>
+    <li>Singleton NFT identity for box authentication</li>
+    <li>72-hour timelock on all spending</li>
+    <li>Migration path built in — allows governance takeover without hard fork</li>
+    <li>45 tests passing covering all paths and adversarial cases</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>03 — LP Fund (Multisig) <span class="phase-status badge done">Complete</span></h3>
+  <p>2-of-3 multisig managing the 5% liquidity allocation. Whitelist-restricted spending — funds can only flow to approved DEX pools, bridges, or market-making contracts.</p>
+  <ul>
+    <li>Whitelist enforced in contract, not just policy</li>
+    <li>Migration path matches treasury for parallel governance handover</li>
+    <li>No vesting (Option A in VESTING_DECISION.md)</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>04 — Storage Rent Model <span class="phase-status badge done">Complete</span></h3>
+  <p>Economic simulation of the 12-month rent cycle at 312,500 nano/byte/year. 274-line model covering 560 parameter combinations.</p>
+  <ul>
+    <li>Annual cost matches Ergo (proven since July 2023)</li>
+    <li>4x faster cleanup cycle than Ergo (12mo vs 4yr)</li>
+    <li>Miner-only collection — no MEV bots front-running</li>
+    <li>1-coin balance survives 12.8 years of total neglect</li>
+    <li>7 sensitivity charts + plain-language holder impact guide</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>05 — Integration Testing <span class="phase-status badge done">Complete</span></h3>
+  <p>Full pipeline test: emission contract feeding treasury and LP fund accumulation contracts across multi-block sequences, including the first halving boundary.</p>
+  <ul>
+    <li>Genesis-to-emission verified</li>
+    <li>Halving transition (50 → 25 coins) tested</li>
+    <li>Multi-contract interaction confirmed</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>06 — YoloDAO Governance System <span class="phase-status badge done">Complete (Phases 1-3)</span></h3>
+  <p>Full on-chain governance adapted from DuckDAO (production-proven on Ergo). YOLO holders lock coins for vYOLO proxy tokens, vote on treasury proposals, multisig executes passed votes until full governance migration.</p>
+
+  <table style="margin-top: 12px;">
+    <tr><th>Contract</th><th>Purpose</th><th class="center">Audit</th><th class="center">Tests</th></tr>
+    <tr><td><code>vault.es</code></td><td>Holds locked YOLO + state NFT</td><td class="center audit-9">9/10</td><td class="center">9</td></tr>
+    <tr><td><code>reserve.es</code></td><td>Holds vYOLO + reserve NFT</td><td class="center audit-9">9/10</td><td class="center">9 + 5</td></tr>
+    <tr><td><code>treasury.es</code></td><td>Governance-controlled treasury (split-math)</td><td class="center audit-9">9/10</td><td class="center">12</td></tr>
+    <tr><td><code>counting.es</code></td><td>4-phase vote counting state machine</td><td class="center audit-8">8.5/10</td><td class="center">10</td></tr>
+    <tr><td><code>proposal.es</code></td><td>Proposal lifecycle (state token 1→2)</td><td class="center audit-9">9/10</td><td class="center">8</td></tr>
+    <tr><td><code>userVote.es</code></td><td>Per-voter box (cancel/submit)</td><td class="center audit-9">9/10</td><td class="center">6</td></tr>
+    <tr><td><code>timeValidator.es</code></td><td>Voting window gate</td><td class="center audit-8">8/10</td><td class="center">—</td></tr>
+    <tr><td><code>integration_test</code></td><td>Full lifecycle: deposit → vote → execute → redeem</td><td class="center">—</td><td class="center">1</td></tr>
+  </table>
+
+  <p style="margin-top: 14px;"><strong>Plus:</strong> Python voting bot (stateless, multi-bot safe), Python lifecycle model, complete documentation (HANDOFF.md, README.md, PARAMETERS.md, EDGE_CASES.md). All 60 tests run in &lt;1 second.</p>
+</div>
+
+<h2>Key Design Decisions Locked</h2>
+<table>
+  <tr><th>Decision</th><th>Choice</th></tr>
+  <tr><td>Treasury distribution</td><td>Proportion-based (X / 10,000,000) — inherently safe vs fixed-amount</td></tr>
+  <tr><td>Support thresholds</td><td>Tiered: 50% normal, 90% for &gt;10% of treasury</td></tr>
+  <tr><td>Governance migration</td><td>New-treasury-mode (90% super-majority transfers full treasury)</td></tr>
+  <tr><td>Initiation stake</td><td>100k vYOLO floor, forfeited to treasury on cancel</td></tr>
+  <tr><td>State tracking</td><td>Token-quantity pattern (1=pending, 2=passed)</td></tr>
+  <tr><td>Vote NFT lifecycle</td><td>Burned on counting consumption (nested forall)</td></tr>
+  <tr><td>Storage rent on vault/reserve</td><td>Active, no exemption — bot heartbeat resets clock; bounded drift &lt;0.4 coins/yr</td></tr>
+  <tr><td>i64 overflow protection</td><td>Split-math pattern in treasury.es proportion calculation</td></tr>
+</table>
+
+<h2>What's Next</h2>
+
+<div class="phase">
+  <h3>External — Node Fork <span class="phase-status badge next">UNBLOCKED — Node Exists</span></h3>
+  <p><strong>arkadianet/ergo v0.3.0</strong> (released 2026-06-02) is the Rust node we've been waiting for. From-scratch implementation, strict Scala consensus parity, mainnet sync confirmed.</p>
+  <ul>
+    <li><strong>Status:</strong> Pre-1.0 alpha. Not for funds custody yet, but functional and actively developed.</li>
+    <li><strong>Build:</strong> <code>cargo build --release -p ergo-node -p ergo-wallet</code> on Rust 1.95.0</li>
+    <li><strong>Modes supported:</strong> Full archive, UTXO snapshot bootstrap, pruned, digest verifier, headers-only, NiPoPoW</li>
+    <li><strong>Mining:</strong> External-miner REST protocol supported (requires utxo state mode)</li>
+    <li><strong>Sigma-rust:</strong> Used only as dev/test oracle — never linked into consensus path</li>
+    <li><strong>License:</strong> MIT or Apache 2.0 (dual)</li>
+    <li><strong>Next steps:</strong> (1) Test build locally (2) Sync against Ergo mainnet to validate (3) Scope fork — swap Autolykos2 → Ethash, change network magic, custom genesis box per YOLO emission spec, retune block time 120s → 20s</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>External — Bridge Integration <span class="phase-status badge next">Coordination</span></h3>
+  <p>AEther bridge already tested moving assets between Ergo mainnet and Cosmos/Ethereum testnets. Scoping conversations needed for SigmaChain integration so YOLO can reach Ethereum DEXes and Cosmos liquidity from early on.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 4 — Governance Frontend <span class="phase-status badge todo">Ready to Build</span></h3>
+  <p>React app, reuses Etcha V3 wizard patterns. Out of V1 scope but needed before mainnet.</p>
+  <ul>
+    <li>Lock/Redeem screen (vault interaction)</li>
+    <li>Proposal list + detail with threshold meters</li>
+    <li>Vote / Cancel vote / Create proposal wizards</li>
+    <li>Top-20 holder dashboard, proposal-from-box-id verification, configurable RPC</li>
+    <li>Spec frozen — see <code>06-governance/HANDOFF.md</code></li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>Phase 5 — Testnet Deployment <span class="phase-status badge next">Achievable Now</span></h3>
+  <p>Strict ordering: mint state NFTs → mint reserve NFTs → mint vYOLO → compile contracts with real IDs → deploy 5 vault/reserve pairs → deploy counting + treasury (dormant) → start voting bot. Stress test concurrent deposits + bot restart recovery.</p>
+  <p style="margin-top: 10px; font-size: 14px; color: var(--muted);">Path: fork arkadianet/ergo → apply YOLO parameters → spin up local testnet → run genesis sequence → deploy contracts → verify the integration test against the real node.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 6 — Mainnet <span class="phase-status badge hold">Post-Testnet</span></h3>
+  <p>Mainnet token IDs, mainnet wallet, multiple independent bot operators. Governance runs alongside multisig for observation period. Community votes to migrate treasury when confidence is established (90% threshold).</p>
+</div>
+
+<div class="phase">
+  <h3>DeFi Deployment <span class="phase-status badge todo">Audit Phase</span></h3>
+  <p>Existing Ergo DeFi contracts (AMM, lending, options) need parameter audits for the 20s block time. Logic is identical; only time-based constants change.</p>
+</div>
+
+<div class="phase">
+  <h3>Mining Infrastructure <span class="phase-status badge todo">Research</span></h3>
+  <p>Document stratum protocol so miners connect existing GPU software without custom tools. Build mining profitability calculator with GPU-by-GPU estimates.</p>
+</div>
+
+<h2>Bonus: ErgoScript Rust Compiler</h2>
+<div class="phase">
+  <h3>Status: 50% scaffolding, ~10% language coverage <span class="phase-status badge todo">Optional Win</span></h3>
+  <p>The <code>ergoscript-compiler</code> crate in sigma-rust is a partial implementation that compiles arithmetic expressions but stops there. Compiling real contracts requires a running Ergo node (the workaround we use throughout this project).</p>
+
+  <p><strong>What's working:</strong> Lexer (complete for current scope), Pratt parser, basic AST/HIR/MIR pipeline, full orchestration. The architecture is right.</p>
+
+  <p><strong>What's missing:</strong> Method calls, lambdas, blocks, if/else, boolean operators, type annotations, built-in functions. The parser stopped at the eldiro tutorial scope.</p>
+
+  <div class="progress-bar"><div class="progress-fill" style="width: 50%"></div></div>
+  <p style="font-size: 13px; color: var(--muted); margin-top: 0;">Estimated 8-12 Claude Code sessions to complete. Test acceptance criteria: all 7 YoloDAO contracts compile to byte-matching ErgoTree.</p>
+
+  <p style="margin-top: 14px;"><strong>Why bother:</strong> Offline contract development, browser/WASM compilation, CI without a node, dynamic contract generation, lower barrier to entry for non-Scala developers.</p>
+
+  <p>Documents: <code>overall-documents/ERGOSCRIPT-RUST-COMPILER-STATUS.md</code> (full analysis) and <code>ERGOSCRIPT-COMPILER-HANDOFF.md</code> (session-by-session plan).</p>
+</div>
+
+<h2>Repo Layout</h2>
+<table>
+  <tr><th>Directory</th><th>Contents</th></tr>
+  <tr><td><code>01-emission-tests/</code></td><td>Emission contract + 81 tests + Python semantic model</td></tr>
+  <tr><td><code>02-treasury-tests/</code></td><td>Treasury multisig governance + accumulation + 45 tests</td></tr>
+  <tr><td><code>03-lp-fund-tests/</code></td><td>LP fund multisig + accumulation + tests</td></tr>
+  <tr><td><code>04-storage-rent/</code></td><td>Economic model, 7 sensitivity charts, holder impact guide</td></tr>
+  <tr><td><code>05-integration-tests/</code></td><td>Multi-contract pipeline tests</td></tr>
+  <tr><td><code>06-governance/</code></td><td>YoloDAO: 7 contracts, 60 tests, voting bot, integration test</td></tr>
+  <tr><td><code>overall-documents/</code></td><td>Architecture docs, handoffs, fork plans, compiler status</td></tr>
+</table>
+
+<h2>The Honest Assessment</h2>
+<div class="lead" style="border-left-color: var(--blue);">
+  Every line of contract code that needs to exist for genesis is written, tested, and audited. The economic model is simulated. The governance system is built and reviewed. <strong>The Rust node now exists.</strong> What's missing is the actual fork work (swap PoW, change parameters, custom genesis), bridge coordination, frontend, and miner adoption. The path from here to a running chain is concrete engineering, not partnership-wrangling. If it catches, this is the first ErgoScript fork with on-chain governance and DeFi from block 1. If it doesn't, every line is open source and nothing was lost.
+</div>
+
+<h2>Immediate Action Items (next 1-2 weeks)</h2>
+<div class="phase">
+  <ol>
+    <li><strong>Clone &amp; build arkadianet/ergo v0.3.0</strong> — verify the toolchain works locally (Rust 1.95.0, cargo build, ~30 min)</li>
+    <li><strong>Run it against Ergo mainnet</strong> — sync to tip, confirm the v0.3.0 claim holds (a few hours)</li>
+    <li><strong>Inventory consensus parameters</strong> — find every hardcoded constant (block time, halving interval, PoW algo, network magic, genesis hash) in <code>docs/configuration.md</code> and the source. Build a one-page list of every change needed for SigmaChain.</li>
+    <li><strong>Scope the Ethash swap</strong> — Ergo uses Autolykos2 (memory-hard). YOLO wants Ethash. Locate the PoW verification module, assess swap complexity. May need to keep Autolykos2 initially to ship faster — Ethash can be a V2 decision.</li>
+    <li><strong>File a feedback issue on arkadianet/ergo</strong> — note that we're testing v0.3.0 with a real contract suite. Builds goodwill and surfaces our use case to the maintainer.</li>
+    <li><strong>Set up CI for the contracts</strong> — once we can build a local testnet node, the integration test against the real node becomes feasible.</li>
+  </ol>
+</div>
+
+<footer>
+  $YOLO Chain · No premine, no VC, no team tokens · Open source · MIT License
+</footer>
+
+</div>
+</body>
+</html>
