@@ -44,24 +44,34 @@ fn parse_digest33_hex(s: &str) -> [u8; 33] {
     bytes
 }
 
-/// Ergo network selector. Discriminates only at construction time
-/// (via the constructors on parameter types below); downstream
-/// consumers take narrow params and never branch on this.
+/// Network selector. Discriminates only at construction time (via the
+/// constructors on parameter types below); downstream consumers take
+/// narrow params and never branch on this.
+///
+/// The first two variants are upstream Ergo. `SigmaChainTestnet` is
+/// the YOLO/SigmaChain fork's network: see the SigmaChain parameter
+/// inventory in `overall-documents/sigmachain-parameter-inventory.md`
+/// for the per-variant divergences from Ergo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Network {
-    /// Public mainnet.
+    /// Ergo public mainnet.
     Mainnet,
-    /// Public testnet.
+    /// Ergo public testnet.
     Testnet,
+    /// SigmaChain testnet — fork of arkadianet/ergo with YOLO emission,
+    /// 20 s blocks, miner-only storage rent. Magic `[0x59, 0x4F, 0x4C,
+    /// 0x4F]` ("YOLO" ASCII), address prefix `0x20`.
+    SigmaChainTestnet,
 }
 
 impl Network {
     /// Lowercase canonical name, matching the Scala `ergo.networkType`
-    /// HOCON field value.
+    /// HOCON field value (plus `"sigmachain-testnet"` for the YOLO fork).
     pub const fn as_str(self) -> &'static str {
         match self {
             Network::Mainnet => "mainnet",
             Network::Testnet => "testnet",
+            Network::SigmaChainTestnet => "sigmachain-testnet",
         }
     }
 }
@@ -79,6 +89,7 @@ impl std::str::FromStr for Network {
         match s.to_lowercase().as_str() {
             "mainnet" => Ok(Network::Mainnet),
             "testnet" => Ok(Network::Testnet),
+            "sigmachain-testnet" => Ok(Network::SigmaChainTestnet),
             other => Err(format!("unknown network: {other}")),
         }
     }
@@ -113,11 +124,23 @@ impl NetworkParams {
         address_prefix: NetworkPrefix::Testnet,
     };
 
+    /// SigmaChain testnet identity. Magic bytes are the ASCII for
+    /// "YOLO" (`Y=0x59, O=0x4F, L=0x4C, O=0x4F`), chosen so any node
+    /// debugging a p2p capture instantly recognizes the network from
+    /// the first 4 bytes. Address prefix `0x20` is distinct from
+    /// Ergo's `0x00` mainnet and `0x10` testnet, so wallets reject
+    /// cross-network addresses at decode time.
+    pub const SIGMACHAIN_TESTNET: NetworkParams = NetworkParams {
+        magic: [0x59, 0x4F, 0x4C, 0x4F],
+        address_prefix: NetworkPrefix::SigmaChainTestnet,
+    };
+
     /// Identity for the given [`Network`].
     pub const fn for_network(net: Network) -> NetworkParams {
         match net {
             Network::Mainnet => Self::MAINNET,
             Network::Testnet => Self::TESTNET,
+            Network::SigmaChainTestnet => Self::SIGMACHAIN_TESTNET,
         }
     }
 }
@@ -204,11 +227,20 @@ impl DifficultyParams {
         }
     }
 
+    /// SigmaChain testnet difficulty schedule. Phase 3.1 stub — clones
+    /// `testnet()`. Phase 3.2 will set `desired_interval_ms = 20_000`
+    /// (20 s blocks per the SigmaChain emission model) and scale the
+    /// epoch length to keep wall-clock voting windows comparable.
+    pub fn sigmachain_testnet() -> Self {
+        Self::testnet()
+    }
+
     /// Schedule for the given [`Network`].
     pub fn for_network(net: Network) -> Self {
         match net {
             Network::Mainnet => Self::mainnet(),
             Network::Testnet => Self::testnet(),
+            Network::SigmaChainTestnet => Self::sigmachain_testnet(),
         }
     }
 }
@@ -266,6 +298,14 @@ impl VotingParams {
             activation_epochs: 32,
             version2_activation: None,
         }
+    }
+
+    /// SigmaChain testnet voting params. Phase 3.1 stub — clones
+    /// `testnet()`. Phase 3.2 will scale `voting_length` to match the
+    /// shorter SigmaChain block interval (target: comparable wall-clock
+    /// voting window).
+    pub const fn sigmachain_testnet() -> Self {
+        Self::testnet()
     }
 
     /// `softForkApproved(votes) = votes > votingLength * softForkEpochs
@@ -334,6 +374,16 @@ impl MonetaryParams {
     /// real-time emission rate but not the block-count schedule.
     pub const fn testnet() -> Self {
         Self::mainnet()
+    }
+
+    /// SigmaChain testnet monetary params. Phase 3.1 stub — clones
+    /// `testnet()` (Ergo curve). Phase 3.3 will replace this with the
+    /// YOLO geometric-halving emission (50 → 25 → … → 1 tail at
+    /// 1_577_880-block halvings, 85/10/5 split). The existing field
+    /// shape can't express that curve; chunk 3.3 will introduce an
+    /// `EmissionCurve` enum or per-network function.
+    pub const fn sigmachain_testnet() -> Self {
+        Self::testnet()
     }
 }
 
@@ -439,6 +489,19 @@ impl GenesisParams {
         }
     }
 
+    /// SigmaChain testnet genesis. Phase 3.1 stub: zero state digest,
+    /// no header id, no embedded boxes — node will refuse to start
+    /// until Phase 4 builds the real genesis state. Tests can still
+    /// construct a `ChainSpec::sigmachain_testnet()` for parity/identity
+    /// checks without exercising the genesis loader.
+    pub fn sigmachain_testnet() -> Self {
+        Self {
+            state_digest: [0u8; 33],
+            header_id: None,
+            boxes_json: None,
+        }
+    }
+
     /// Dispatch to the per-network genesis parameters. Mirrors the
     /// `for_network` accessor on the sibling chain-spec params types so
     /// boot can resolve the genesis state digest without a manual match.
@@ -446,6 +509,7 @@ impl GenesisParams {
         match net {
             Network::Mainnet => Self::mainnet(),
             Network::Testnet => Self::testnet(),
+            Network::SigmaChainTestnet => Self::sigmachain_testnet(),
         }
     }
 }
@@ -488,6 +552,14 @@ impl BlockTimingParams {
             desired_interval_ms: 45_000,
             header_chain_diff: 800,
         }
+    }
+
+    /// SigmaChain testnet timing. Phase 3.1 stub — clones `testnet()`.
+    /// Phase 3.2 sets `desired_interval_ms = 20_000` (20 s blocks per
+    /// emission.es) and `header_chain_diff = 600` (~200 min freshness
+    /// tolerance, comparable to mainnet's ~3.3 h).
+    pub const fn sigmachain_testnet() -> Self {
+        Self::testnet()
     }
 
     /// Sync-tip threshold the headers-chain-synced gate compares
@@ -583,13 +655,34 @@ impl ChainSpec {
         }
     }
 
+    /// SigmaChain testnet spec. Phase 3.1: identity-only fork — only
+    /// `network_params` (magic + address prefix) differs from upstream
+    /// `Ergo` testnet; every other narrow param is the testnet clone.
+    /// Phases 3.2–3.4 will diverge block timing, voting, monetary,
+    /// genesis, and storage rent to YOLO targets. `reemission` is
+    /// `None` (SigmaChain has no EIP-27).
+    pub fn sigmachain_testnet() -> Self {
+        Self {
+            network: Network::SigmaChainTestnet,
+            network_params: NetworkParams::SIGMACHAIN_TESTNET,
+            difficulty: DifficultyParams::sigmachain_testnet(),
+            voting: VotingParams::sigmachain_testnet(),
+            monetary: MonetaryParams::sigmachain_testnet(),
+            reemission: None,
+            genesis: GenesisParams::sigmachain_testnet(),
+            block_timing: BlockTimingParams::sigmachain_testnet(),
+            bootstrap: BootstrapParams::sigmachain_testnet(),
+        }
+    }
+
     /// Spec for the given [`Network`]. This is the only place that
-    /// branches on `Network::Mainnet` vs `Network::Testnet`; downstream
-    /// code takes narrow views.
+    /// branches on `Network` variants; downstream code takes narrow
+    /// views.
     pub fn for_network(net: Network) -> Self {
         match net {
             Network::Mainnet => Self::mainnet(),
             Network::Testnet => Self::testnet(),
+            Network::SigmaChainTestnet => Self::sigmachain_testnet(),
         }
     }
 }
@@ -647,6 +740,17 @@ impl BootstrapParams {
             checkpoint: None,
         }
     }
+
+    /// SigmaChain testnet bootstrap. No public seed peers yet — the
+    /// network bootstraps from a single local node. Operators add
+    /// peers via the `[peers] known_peers` TOML field. No checkpoint
+    /// (fresh chain).
+    pub fn sigmachain_testnet() -> Self {
+        Self {
+            seed_peers: Vec::new(),
+            checkpoint: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -657,7 +761,11 @@ mod tests {
 
     #[test]
     fn network_roundtrips_through_str() {
-        for net in [Network::Mainnet, Network::Testnet] {
+        for net in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::SigmaChainTestnet,
+        ] {
             assert_eq!(net.as_str().parse::<Network>().unwrap(), net);
         }
     }
@@ -666,6 +774,10 @@ mod tests {
     fn network_display_matches_as_str() {
         assert_eq!(format!("{}", Network::Mainnet), "mainnet");
         assert_eq!(format!("{}", Network::Testnet), "testnet");
+        assert_eq!(
+            format!("{}", Network::SigmaChainTestnet),
+            "sigmachain-testnet"
+        );
     }
 
     #[test]
@@ -677,6 +789,10 @@ mod tests {
         assert_eq!(
             NetworkParams::for_network(Network::Testnet),
             NetworkParams::TESTNET
+        );
+        assert_eq!(
+            NetworkParams::for_network(Network::SigmaChainTestnet),
+            NetworkParams::SIGMACHAIN_TESTNET
         );
     }
 
@@ -925,6 +1041,96 @@ mod tests {
         let t = ChainSpec::for_network(Network::Testnet);
         assert_eq!(t.network, Network::Testnet);
         assert_eq!(t.network_params, NetworkParams::TESTNET);
+
+        let s = ChainSpec::for_network(Network::SigmaChainTestnet);
+        assert_eq!(s.network, Network::SigmaChainTestnet);
+        assert_eq!(s.network_params, NetworkParams::SIGMACHAIN_TESTNET);
+    }
+
+    // ----- SigmaChain testnet identity -----
+
+    #[test]
+    fn sigmachain_testnet_magic_is_yolo_ascii() {
+        // [0x59, 0x4F, 0x4C, 0x4F] = ASCII "YOLO". Chosen so a p2p
+        // packet capture identifies the network at a glance.
+        assert_eq!(
+            NetworkParams::SIGMACHAIN_TESTNET.magic,
+            [0x59, 0x4F, 0x4C, 0x4F]
+        );
+        assert_eq!(
+            std::str::from_utf8(&NetworkParams::SIGMACHAIN_TESTNET.magic).unwrap(),
+            "YOLO"
+        );
+    }
+
+    #[test]
+    fn sigmachain_testnet_magic_differs_from_ergo() {
+        // Different magic from Ergo mainnet/testnet means a SigmaChain
+        // node and an Ergo node drop each other's packets at the p2p
+        // framing layer (Phase 1 inventory: chain-isolation requirement).
+        assert_ne!(
+            NetworkParams::SIGMACHAIN_TESTNET.magic,
+            NetworkParams::MAINNET.magic
+        );
+        assert_ne!(
+            NetworkParams::SIGMACHAIN_TESTNET.magic,
+            NetworkParams::TESTNET.magic
+        );
+    }
+
+    #[test]
+    fn sigmachain_testnet_address_prefix_is_0x20() {
+        // Distinct high nibble from Ergo mainnet (0x00) and Ergo
+        // testnet (0x10) so wallets reject cross-network addresses
+        // at decode time.
+        assert_eq!(
+            NetworkParams::SIGMACHAIN_TESTNET.address_prefix,
+            NetworkPrefix::SigmaChainTestnet
+        );
+        assert_eq!(
+            NetworkParams::SIGMACHAIN_TESTNET.address_prefix as u8,
+            0x20
+        );
+    }
+
+    #[test]
+    fn sigmachain_testnet_has_no_reemission() {
+        // SigmaChain doesn't implement EIP-27 — the emission curve
+        // is the YoloDAO emission.es contract (Phase 3.3 will wire
+        // the curve into ergo-mining).
+        assert!(ChainSpec::sigmachain_testnet().reemission.is_none());
+    }
+
+    #[test]
+    fn sigmachain_testnet_genesis_is_unbuilt_stub() {
+        // Phase 3.1: genesis is a zero-digest placeholder so the
+        // chain-spec compiles; Phase 4 will populate it with the
+        // real YOLO emission/treasury/LP boxes.
+        let g = GenesisParams::sigmachain_testnet();
+        assert_eq!(g.state_digest, [0u8; 33]);
+        assert!(g.header_id.is_none());
+        assert!(g.boxes_json.is_none());
+    }
+
+    #[test]
+    fn sigmachain_testnet_bootstrap_has_no_seeds_or_checkpoint() {
+        // Brand-new network: no public seed peers and no historical
+        // checkpoint yet.
+        let p = BootstrapParams::sigmachain_testnet();
+        assert!(p.seed_peers.is_empty());
+        assert!(p.checkpoint.is_none());
+    }
+
+    #[test]
+    fn sigmachain_testnet_parses_from_str() {
+        assert_eq!(
+            "sigmachain-testnet".parse::<Network>().unwrap(),
+            Network::SigmaChainTestnet
+        );
+        assert_eq!(
+            "SIGMACHAIN-TESTNET".parse::<Network>().unwrap(),
+            Network::SigmaChainTestnet
+        );
     }
 
     #[test]

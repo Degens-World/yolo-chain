@@ -345,6 +345,7 @@ fn synthesize_p2sh_address(network: NetworkPrefix, script_hash: &[u8; 24]) -> St
     let header = match network {
         NetworkPrefix::Mainnet => 0x02_u8, // TYPE_P2SH | mainnet nibble (0x00)
         NetworkPrefix::Testnet => 0x12,    // TYPE_P2SH | testnet nibble (0x10)
+        NetworkPrefix::SigmaChainTestnet => 0x22, // TYPE_P2SH | sigmachain testnet nibble (0x20)
     };
     let mut buf = Vec::with_capacity(1 + 24 + 4);
     buf.push(header);

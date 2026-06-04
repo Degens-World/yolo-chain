@@ -100,6 +100,8 @@ struct AddressArgs {
 enum Network {
     Mainnet,
     Testnet,
+    #[value(name = "sigmachain-testnet")]
+    SigmaChainTestnet,
 }
 
 impl std::fmt::Display for Network {
@@ -107,6 +109,7 @@ impl std::fmt::Display for Network {
         match self {
             Self::Mainnet => f.write_str("mainnet"),
             Self::Testnet => f.write_str("testnet"),
+            Self::SigmaChainTestnet => f.write_str("sigmachain-testnet"),
         }
     }
 }
@@ -116,6 +119,7 @@ impl Network {
         match self {
             Self::Mainnet => NetworkPrefix::Mainnet,
             Self::Testnet => NetworkPrefix::Testnet,
+            Self::SigmaChainTestnet => NetworkPrefix::SigmaChainTestnet,
         }
     }
 }

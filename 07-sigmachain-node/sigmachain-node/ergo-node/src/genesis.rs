@@ -32,6 +32,16 @@ pub fn testnet_genesis_boxes() -> Vec<([u8; 32], Vec<u8>)> {
     parse_genesis_boxes(json)
 }
 
+/// SigmaChain testnet genesis boxes. Phase 3.1 stub: returns an
+/// empty Vec because the real genesis (emission box + treasury and
+/// LP accumulation boxes) hasn't been constructed yet — that's
+/// Phase 4. A node started against `Network::SigmaChainTestnet`
+/// today will boot to a chain with no UTXOs, which is fine for
+/// chain-spec parity tests but unfit for actual block production.
+pub fn sigmachain_testnet_genesis_boxes() -> Vec<([u8; 32], Vec<u8>)> {
+    Vec::new()
+}
+
 /// Network-aware genesis seeding. Sole entry point for runtime
 /// initialization — keeps the `match Network` arm contained to one
 /// place so callers stay network-agnostic.
@@ -39,6 +49,7 @@ pub fn genesis_boxes_for(network: Network) -> Vec<([u8; 32], Vec<u8>)> {
     match network {
         Network::Mainnet => mainnet_genesis_boxes(),
         Network::Testnet => testnet_genesis_boxes(),
+        Network::SigmaChainTestnet => sigmachain_testnet_genesis_boxes(),
     }
 }
 

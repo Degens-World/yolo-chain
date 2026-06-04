@@ -190,6 +190,14 @@ pub fn scala_launch_testnet() -> ActiveProtocolParameters {
     scala_launch_mainnet()
 }
 
+/// SigmaChain testnet launch parameters. Phase 3.1: identical to
+/// Scala launch (block-version, parameters table, validation rules
+/// all inherit from upstream). Phase 3.2/3.3 may diverge — block
+/// version and per-block reward parameters in particular.
+pub fn scala_launch_sigmachain_testnet() -> ActiveProtocolParameters {
+    scala_launch_mainnet()
+}
+
 /// Launch parameters for the given network. Production callers that
 /// hold a `Network` should use this; consumers without network
 /// context (most tests) can keep calling [`scala_launch`].
@@ -197,6 +205,7 @@ pub fn scala_launch_for_network(net: Network) -> ActiveProtocolParameters {
     match net {
         Network::Mainnet => scala_launch_mainnet(),
         Network::Testnet => scala_launch_testnet(),
+        Network::SigmaChainTestnet => scala_launch_sigmachain_testnet(),
     }
 }
 

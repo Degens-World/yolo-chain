@@ -28,10 +28,14 @@ use crate::sigma_value::{SigmaBoolean, SigmaValue};
 /// `NetworkPrefix`: high-nibble of the header byte).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkPrefix {
-    /// Mainnet — high nibble `0x00`.
+    /// Ergo mainnet — high nibble `0x00`.
     Mainnet = 0x00,
-    /// Testnet — high nibble `0x10`.
+    /// Ergo testnet — high nibble `0x10`.
     Testnet = 0x10,
+    /// SigmaChain testnet — high nibble `0x20`. Distinct from Ergo's
+    /// mainnet/testnet so wallets reject SigmaChain addresses on Ergo
+    /// (and vice versa) at the network-prefix check.
+    SigmaChainTestnet = 0x20,
 }
 
 impl NetworkPrefix {
