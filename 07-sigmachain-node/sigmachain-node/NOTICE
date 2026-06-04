@@ -1,0 +1,16 @@
+SigmaChain Node
+===============
+
+This repository is a fork of arkadianet/ergo (https://github.com/arkadianet/ergo).
+
+Upstream consensus framework, sigma interpreter, box model, and node
+architecture: Copyright (c) 2026 Ergo Rust Node contributors, dual-licensed
+under MIT OR Apache-2.0 (see LICENSE-MIT and LICENSE-APACHE).
+
+SigmaChain-specific modifications (network identity, emission curve,
+storage rent rules, genesis configuration, and related changes):
+Copyright (c) 2026 YoloDAO contributors, also dual-licensed under
+MIT OR Apache-2.0.
+
+See ../../overall-documents/sigmachain-parameter-inventory.md for the
+full list of divergences from upstream.

@@ -1,6 +1,14 @@
 # Rust build artifacts
 target/
 Cargo.lock
+# But: binary projects need their Cargo.lock committed for reproducible
+# builds. The sigmachain-node fork is a binary project, so we override.
+!07-sigmachain-node/sigmachain-node/Cargo.lock
+
+# SigmaChain: the upstream reference clone is local-only (used for
+# diffs against arkadianet/ergo). Re-clone via the instructions in
+# 07-sigmachain-node/UPSTREAM.md if you need it.
+07-sigmachain-node/arkadianet-ergo-reference/
 
 # Python
 __pycache__/

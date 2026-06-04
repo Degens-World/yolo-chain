@@ -1,0 +1,53 @@
+# Ergo Rust Node — ready-to-use default: a full-archival node with the
+# /blockchain/* extra-index enabled. Run with:
+#
+#   ergo-node --config ergo-node.toml
+#
+# Every other knob (alternative modes, fast bootstrap, tuning, mining) is
+# documented in the fully-commented reference: ergo-node.toml.example.
+
+network  = "mainnet"             # or "testnet"
+# data_dir = "./ergo-data"       # default; holds the node DB + logs
+
+[node]
+agent_name = "ergo-rust"
+node_name  = "ergo-rust-node"
+# Full archival is the default and needs no knobs: state_type = "utxo",
+# verify_transactions = true, blocks_to_keep = -1 — keep every block, validate
+# every transaction, and sync from genesis.
+
+[peers]
+target_outbound = 60
+max_connections = 80
+# The bundled mainnet seed peers are merged in automatically; add your own here.
+
+[api]
+bind = "127.0.0.1:9099"          # loopback only. To expose on the network add
+                                 # `public_bind = true` (and read the note below).
+
+[api.security]
+# Lowercase Blake2b-256 of your secret api_key. The `api_key` request header
+# is required to reach /wallet/* and /node/shutdown (read routes stay open).
+# The value below is blake2b256("hello") — the same dev key the Scala node
+# documents. It is fine on loopback, but **CHANGE IT before `public_bind`**.
+# Generate your own:  printf 'your-secret' | b2sum -l 256
+api_key_hash = "324dcf027dd4a30a932c441f365a25e86b173defa4b8e58948253471b81b72cf"
+
+[indexer]
+enabled = true                   # /blockchain/* extra-index (boxes, tokens,
+                                 # addresses). Builds indexer.redb under data_dir
+                                 # on first start; requires this full-archival setup.
+
+[mining]
+enabled = false                  # external-miner API (GET /mining/candidate +
+                                 # POST /mining/solution). See ergo-node.toml.example
+                                 # for the reward-key and storage-rent knobs.
+
+[logging]
+default_level = "info"
+
+[logging.file]
+dir       = "."
+prefix    = "ergo-node"
+rotation  = "daily"
+max_files = 14

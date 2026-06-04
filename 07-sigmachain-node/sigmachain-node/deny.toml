@@ -1,0 +1,59 @@
+# cargo-deny configuration.
+#
+# Run locally with: cargo install cargo-deny --locked && cargo deny check
+# CI runs the same in .github/workflows/ci.yml.
+
+[licenses]
+# Confidence threshold for license-text matching. 0.8 is the default
+# and accepts permissive licenses with minor formatting variation.
+confidence-threshold = 0.8
+
+# Permissive licenses we accept across the dep tree. Anything outside
+# this list fails the check — bumping the list is a deliberate
+# decision per dep, not a default-allow.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+]
+
+[bans]
+# Reject multiple major-version copies of the same crate where it's
+# avoidable. `warn` rather than `deny` so transitive duplicates
+# (common in alpha) surface in the report without blocking CI.
+multiple-versions = "warn"
+# Deny external wildcard (`*`) version requirements, but allow the implicit
+# wildcard that path-only / workspace-member deps resolve to — otherwise every
+# internal `ergo-*` crate (declared `{ workspace = true }` / by path, with no
+# version) trips this check.
+wildcards            = "deny"
+allow-wildcard-paths = true
+
+[advisories]
+# Yanked + unsound + vulnerability classes are hard fails; informational
+# advisories (notice, unmaintained) report-only.
+yanked       = "deny"
+# RUSTSEC-2025-0141 (bincode 1.x unmaintained): no patched version exists —
+# the bincode team permanently ceased development and consider 1.3.3
+# feature-complete. We use bincode ONLY for LOCAL wallet-state persistence in
+# redb (WalletBox / key metadata); it never touches consensus wire bytes, IDs,
+# or AVL proofs (those go through ergo-ser). Unmaintained != vulnerable, and
+# migrating off bincode would break the on-disk format of existing operator
+# wallet DBs. Mirrored in the cargo-audit step (.github/workflows/ci.yml).
+# Revisit if a CVE is ever filed against bincode 1.3.3.
+ignore       = ["RUSTSEC-2025-0141"]
+
+[sources]
+# Only crates.io. If we ever pull from a git URL, the URL must be
+# explicitly allow-listed here.
+unknown-git      = "deny"
+unknown-registry = "deny"
+allow-git        = []
