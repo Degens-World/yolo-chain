@@ -402,15 +402,136 @@ impl MonetaryParams {
         Self::mainnet()
     }
 
-    /// SigmaChain testnet monetary params. Phase 3.1 stub — clones
-    /// `testnet()` (Ergo curve). Phase 3.3 will replace this with the
-    /// YOLO geometric-halving emission (50 → 25 → … → 1 tail at
-    /// 1_577_880-block halvings, 85/10/5 split). The existing field
-    /// shape can't express that curve; chunk 3.3 will introduce an
-    /// `EmissionCurve` enum or per-network function.
+    /// SigmaChain testnet monetary params. The curve-shape fields
+    /// (`fixed_rate`, `fixed_rate_period`, `epoch_length`,
+    /// `one_epoch_reduction`, `founders_initial_reward`) are unused on
+    /// SigmaChain — the per-block reward and split come from
+    /// [`YoloEmissionParams`] (via [`ChainSpec::emission_curve`]).
+    /// The only field consulted by `ergo-mining` for SigmaChain is
+    /// `miner_reward_delay`: 4_320 blocks at 20 s = 1 day, matching
+    /// Ergo's 720-block / 1-day spendability lock at 120 s blocks.
     pub const fn sigmachain_testnet() -> Self {
-        Self::testnet()
+        Self {
+            fixed_rate: 0,
+            fixed_rate_period: 0,
+            epoch_length: 0,
+            one_epoch_reduction: 0,
+            founders_initial_reward: 0,
+            miner_reward_delay: 4_320,
+        }
     }
+}
+
+/// YOLO emission parameters (SigmaChain-only). Encodes the geometric
+/// halving curve and the 3-way per-block split that the coinbase tx
+/// must produce. Source: `01-emission-tests/emission.es` (the
+/// on-chain contract is the authoritative oracle; these node-side
+/// constants MUST match it byte-for-byte or every block will fail
+/// validation).
+///
+/// Schedule:
+/// - heights `[0, blocks_per_halving)`: `initial_reward` per block
+/// - heights `[blocks_per_halving, 2*blocks_per_halving)`: `initial_reward / 2`
+/// - …continuing for `num_halvings` halvings…
+/// - thereafter: `min_reward` per block, forever (tail emission)
+///
+/// Per-block split (consensus rule, enforced by emission.es):
+/// - `treasury_share_bps` basis points to the treasury accumulation box
+/// - `lp_share_bps` basis points to the LP fund accumulation box
+/// - the remainder to the miner (≈ 8_500 bps for the default
+///   `treasury=1000 / lp=500` split)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct YoloEmissionParams {
+    /// Per-block reward at heights `[0, blocks_per_halving)`,
+    /// nanoYOLO. emission.es line 38: `initialReward: Long =
+    /// 50000000000L`.
+    pub initial_reward: u64,
+    /// Block-count between halving boundaries. emission.es line 37:
+    /// `blocksPerHalving: Int = 1577880` (~1 year at 20 s blocks).
+    pub blocks_per_halving: u32,
+    /// Tail emission floor — per-block reward stops decreasing here.
+    /// emission.es line 39: `minReward: Long = 1000000000L`.
+    pub min_reward: u64,
+    /// Number of halving steps before the tail floor kicks in.
+    /// emission.es line 54-60 unrolls 6 halvings (50 → 25 → 12.5 →
+    /// 6.25 → 3.125 → 1.5625 nano), then `minReward` thereafter.
+    pub num_halvings: u32,
+    /// Treasury share in basis points (1 bp = 0.01%). emission.es
+    /// line 68: `treasuryReward = blockReward * 10L / 100L` ⇒ 1000 bps.
+    pub treasury_share_bps: u16,
+    /// LP fund share in basis points. emission.es line 69:
+    /// `lpReward = blockReward * 5L / 100L` ⇒ 500 bps.
+    pub lp_share_bps: u16,
+}
+
+impl YoloEmissionParams {
+    /// SigmaChain testnet curve, mirroring `emission.es` line 37-69.
+    pub const fn sigmachain_testnet() -> Self {
+        Self {
+            initial_reward: 50_000_000_000,
+            blocks_per_halving: 1_577_880,
+            min_reward: 1_000_000_000,
+            num_halvings: 6,
+            treasury_share_bps: 1_000,
+            lp_share_bps: 500,
+        }
+    }
+
+    /// Per-block total reward at `height`. Mirrors the
+    /// `blockReward` branch in emission.es (line 53-64).
+    pub const fn block_reward_at_height(&self, height: u32) -> u64 {
+        let halvings = height / self.blocks_per_halving;
+        if halvings >= self.num_halvings {
+            self.min_reward
+        } else {
+            let computed = self.initial_reward >> halvings;
+            if computed > self.min_reward {
+                computed
+            } else {
+                self.min_reward
+            }
+        }
+    }
+
+    /// Per-block treasury share at `height`. emission.es line 68:
+    /// `treasuryReward = blockReward * 10L / 100L`. Implemented as
+    /// basis-points × i64 to match the contract's integer arithmetic.
+    pub const fn treasury_reward_at_height(&self, height: u32) -> u64 {
+        let r = self.block_reward_at_height(height);
+        r * self.treasury_share_bps as u64 / 10_000
+    }
+
+    /// Per-block LP fund share at `height`. emission.es line 69:
+    /// `lpReward = blockReward * 5L / 100L`.
+    pub const fn lp_reward_at_height(&self, height: u32) -> u64 {
+        let r = self.block_reward_at_height(height);
+        r * self.lp_share_bps as u64 / 10_000
+    }
+
+    /// Per-block miner share at `height` = `blockReward - treasury -
+    /// lp`. Computed as remainder (not 85% × block_reward) so the
+    /// arithmetic loses no nano units to integer division — every
+    /// nanoYOLO from the emission box is accounted for across the
+    /// three outputs.
+    pub const fn miner_reward_at_height(&self, height: u32) -> u64 {
+        let total = self.block_reward_at_height(height);
+        total - self.treasury_reward_at_height(height) - self.lp_reward_at_height(height)
+    }
+}
+
+/// Per-network emission curve dispatch. `ChainSpec::emission_curve`
+/// holds one of these so `ergo-mining` can ask the chain-spec "what
+/// is the block reward at height H?" without branching on `Network`
+/// or knowing about either curve's internal shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmissionCurve {
+    /// Ergo's linear-reduction curve, parameters live in
+    /// [`MonetaryParams`]. ergo-mining computes
+    /// `emission_at_height` from those fields.
+    ErgoLinear,
+    /// SigmaChain's geometric-halving curve with a 3-way split,
+    /// parameters live in [`YoloEmissionParams`].
+    Yolo(YoloEmissionParams),
 }
 
 /// Re-emission (EIP-27) parameters: activation height, distribution
@@ -639,8 +760,15 @@ pub struct ChainSpec {
     pub difficulty: DifficultyParams,
     /// Voting epoch length + soft-fork thresholds + v2 hard-fork height.
     pub voting: VotingParams,
-    /// Emission curve.
+    /// Linear-curve emission params (Ergo's curve). Always populated;
+    /// for SigmaChain only `miner_reward_delay` is meaningful — the
+    /// curve-shape fields are unused because `emission_curve` selects
+    /// the geometric-halving path instead.
     pub monetary: MonetaryParams,
+    /// Per-network emission curve dispatch. `ErgoLinear` for Ergo
+    /// mainnet/testnet (consult `monetary`); `Yolo(...)` for
+    /// SigmaChain (consult the embedded [`YoloEmissionParams`]).
+    pub emission_curve: EmissionCurve,
     /// Re-emission (EIP-27) schedule + token / NFT identities. `None`
     /// on networks that don't enable the EIP-27 reemission protocol
     /// (new public testnet, post PR #2252).
@@ -663,6 +791,7 @@ impl ChainSpec {
             difficulty: DifficultyParams::mainnet(),
             voting: VotingParams::mainnet(),
             monetary: MonetaryParams::mainnet(),
+            emission_curve: EmissionCurve::ErgoLinear,
             reemission: Some(ReemissionParams::mainnet()),
             genesis: GenesisParams::mainnet(),
             block_timing: BlockTimingParams::mainnet(),
@@ -681,6 +810,7 @@ impl ChainSpec {
             difficulty: DifficultyParams::testnet(),
             voting: VotingParams::testnet(),
             monetary: MonetaryParams::testnet(),
+            emission_curve: EmissionCurve::ErgoLinear,
             reemission: None,
             genesis: GenesisParams::testnet(),
             block_timing: BlockTimingParams::testnet(),
@@ -701,6 +831,7 @@ impl ChainSpec {
             difficulty: DifficultyParams::sigmachain_testnet(),
             voting: VotingParams::sigmachain_testnet(),
             monetary: MonetaryParams::sigmachain_testnet(),
+            emission_curve: EmissionCurve::Yolo(YoloEmissionParams::sigmachain_testnet()),
             reemission: None,
             genesis: GenesisParams::sigmachain_testnet(),
             block_timing: BlockTimingParams::sigmachain_testnet(),
@@ -1254,6 +1385,107 @@ mod tests {
         let s = ChainSpec::sigmachain_testnet();
         assert_eq!(s.block_timing.desired_interval_ms, 20_000);
         assert_eq!(s.difficulty.desired_interval_ms, 20_000);
+    }
+
+    // ----- SigmaChain emission curve (Phase 3.3) -----
+
+    #[test]
+    fn yolo_emission_initial_reward_matches_contract() {
+        // emission.es line 38: initialReward = 50_000_000_000.
+        let e = YoloEmissionParams::sigmachain_testnet();
+        assert_eq!(e.initial_reward, 50_000_000_000);
+        assert_eq!(e.block_reward_at_height(0), 50_000_000_000);
+        assert_eq!(e.block_reward_at_height(1), 50_000_000_000);
+        assert_eq!(
+            e.block_reward_at_height(e.blocks_per_halving - 1),
+            50_000_000_000
+        );
+    }
+
+    #[test]
+    fn yolo_emission_halves_at_each_boundary() {
+        // emission.es line 51-60: halvings = HEIGHT / blocksPerHalving,
+        // then 50 / 2^halvings until min_reward.
+        let e = YoloEmissionParams::sigmachain_testnet();
+        let h = e.blocks_per_halving;
+        assert_eq!(e.block_reward_at_height(h), 25_000_000_000);
+        assert_eq!(e.block_reward_at_height(2 * h), 12_500_000_000);
+        assert_eq!(e.block_reward_at_height(3 * h), 6_250_000_000);
+        assert_eq!(e.block_reward_at_height(4 * h), 3_125_000_000);
+        assert_eq!(e.block_reward_at_height(5 * h), 1_562_500_000);
+    }
+
+    #[test]
+    fn yolo_emission_tail_floor_kicks_in_at_sixth_halving() {
+        // After 6 halvings, the geometric value would be 50 / 64 =
+        // 0.78125 nano, below the 1-nano floor. emission.es line 60
+        // collapses to minReward = 1_000_000_000 from this height on.
+        let e = YoloEmissionParams::sigmachain_testnet();
+        let h = e.blocks_per_halving;
+        assert_eq!(e.block_reward_at_height(6 * h), 1_000_000_000);
+        assert_eq!(e.block_reward_at_height(7 * h), 1_000_000_000);
+        assert_eq!(e.block_reward_at_height(100 * h), 1_000_000_000);
+    }
+
+    #[test]
+    fn yolo_emission_split_sums_to_total_at_every_halving() {
+        // miner + treasury + lp must equal block_reward at every
+        // height — coinbase tx must produce no nano units of slippage.
+        let e = YoloEmissionParams::sigmachain_testnet();
+        for halvings in 0u32..10 {
+            let h = halvings.saturating_mul(e.blocks_per_halving);
+            let total = e.block_reward_at_height(h);
+            let m = e.miner_reward_at_height(h);
+            let t = e.treasury_reward_at_height(h);
+            let lp = e.lp_reward_at_height(h);
+            assert_eq!(m + t + lp, total, "split mismatch at h={h}");
+        }
+    }
+
+    #[test]
+    fn yolo_emission_split_is_85_10_5_at_height_zero() {
+        // Sanity check on the basis-points arithmetic at the easy case.
+        let e = YoloEmissionParams::sigmachain_testnet();
+        // emission.es: 50 -> 5 treasury / 2.5 lp / 42.5 miner.
+        assert_eq!(e.block_reward_at_height(0), 50_000_000_000);
+        assert_eq!(e.treasury_reward_at_height(0), 5_000_000_000);
+        assert_eq!(e.lp_reward_at_height(0), 2_500_000_000);
+        assert_eq!(e.miner_reward_at_height(0), 42_500_000_000);
+    }
+
+    #[test]
+    fn yolo_emission_split_at_tail_block() {
+        // Tail emission: 1 coin. 10% / 5% / 85% = 100M / 50M / 850M.
+        let e = YoloEmissionParams::sigmachain_testnet();
+        let h = 6 * e.blocks_per_halving;
+        assert_eq!(e.block_reward_at_height(h), 1_000_000_000);
+        assert_eq!(e.treasury_reward_at_height(h), 100_000_000);
+        assert_eq!(e.lp_reward_at_height(h), 50_000_000);
+        assert_eq!(e.miner_reward_at_height(h), 850_000_000);
+    }
+
+    #[test]
+    fn chain_spec_emission_curve_dispatches_per_network() {
+        assert_eq!(ChainSpec::mainnet().emission_curve, EmissionCurve::ErgoLinear);
+        assert_eq!(ChainSpec::testnet().emission_curve, EmissionCurve::ErgoLinear);
+        match ChainSpec::sigmachain_testnet().emission_curve {
+            EmissionCurve::Yolo(p) => {
+                assert_eq!(p, YoloEmissionParams::sigmachain_testnet());
+            }
+            EmissionCurve::ErgoLinear => panic!("SigmaChain must use Yolo curve"),
+        }
+    }
+
+    #[test]
+    fn sigmachain_testnet_miner_reward_delay_is_one_day_at_20s_blocks() {
+        // 4_320 blocks × 20 s = 86_400 s = exactly 1 day.
+        // Mirrors Ergo's 720 blocks × 120 s = 86_400 s = 1 day.
+        let m = MonetaryParams::sigmachain_testnet();
+        assert_eq!(m.miner_reward_delay, 4_320);
+        let mainnet_delay_seconds = (MonetaryParams::mainnet().miner_reward_delay as u64) * 120;
+        let sigmachain_delay_seconds =
+            (m.miner_reward_delay as u64) * 20;
+        assert_eq!(sigmachain_delay_seconds, mainnet_delay_seconds);
     }
 
     #[test]

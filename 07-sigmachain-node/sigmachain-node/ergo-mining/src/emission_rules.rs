@@ -25,6 +25,44 @@ pub const COINS_IN_ONE_ERGO: u64 = 1_000_000_000;
 /// the type lives in the chain-spec crate.
 pub use ergo_chain_spec::MonetaryParams as MonetarySettings;
 
+/// SigmaChain emission curve params (geometric halving + 3-way
+/// split). Re-exported from `ergo-chain-spec` for ergonomic access
+/// from `ergo-mining` call sites that want to stay symmetric with
+/// the Ergo `MonetarySettings` re-export above.
+pub use ergo_chain_spec::{EmissionCurve, YoloEmissionParams};
+
+/// SigmaChain per-block total emission. Thin wrapper over
+/// [`YoloEmissionParams::block_reward_at_height`] kept here so call
+/// sites in `ergo-mining` stay symmetric with the Ergo curve's
+/// [`emission_at_height`] / [`miners_reward_at_height`] helpers.
+///
+/// Returns the *total* per-block reward (miner + treasury + LP);
+/// callers that want only the miner share should use
+/// [`yolo_miners_reward_at_height`].
+pub fn yolo_emission_at_height(h: u32, p: &YoloEmissionParams) -> u64 {
+    p.block_reward_at_height(h)
+}
+
+/// SigmaChain miner share at height `h`. emission.es line 67-68:
+/// 85% of the block reward (computed as
+/// `block_reward - treasury_reward - lp_reward` so no nanoYOLO is
+/// lost to integer division across the 4-output split).
+pub fn yolo_miners_reward_at_height(h: u32, p: &YoloEmissionParams) -> u64 {
+    p.miner_reward_at_height(h)
+}
+
+/// SigmaChain treasury share at height `h`. emission.es line 68:
+/// `treasuryReward = blockReward * 10L / 100L`.
+pub fn yolo_treasury_reward_at_height(h: u32, p: &YoloEmissionParams) -> u64 {
+    p.treasury_reward_at_height(h)
+}
+
+/// SigmaChain LP fund share at height `h`. emission.es line 69:
+/// `lpReward = blockReward * 5L / 100L`.
+pub fn yolo_lp_reward_at_height(h: u32, p: &YoloEmissionParams) -> u64 {
+    p.lp_reward_at_height(h)
+}
+
 /// Per-height total emission. Mirror of `EmissionRules.emissionAtHeight`
 /// (`EmissionRules.scala:67-74`).
 ///
@@ -177,5 +215,42 @@ mod tests {
         // Far past block when emission should be 0.
         let h: u32 = s.fixed_rate_period + 30 * s.epoch_length;
         assert_eq!(emission_at_height(h, &s), 0);
+    }
+
+    // ----- SigmaChain YOLO emission re-exports (Phase 3.3) -----
+
+    #[test]
+    fn yolo_wrappers_match_curve_directly() {
+        // The wrappers should be exact pass-throughs to the
+        // `YoloEmissionParams` methods. Pinning this so a future
+        // refactor that drifts the wrappers gets caught.
+        let p = YoloEmissionParams::sigmachain_testnet();
+        let h = 100u32;
+        assert_eq!(yolo_emission_at_height(h, &p), p.block_reward_at_height(h));
+        assert_eq!(
+            yolo_miners_reward_at_height(h, &p),
+            p.miner_reward_at_height(h)
+        );
+        assert_eq!(
+            yolo_treasury_reward_at_height(h, &p),
+            p.treasury_reward_at_height(h)
+        );
+        assert_eq!(yolo_lp_reward_at_height(h, &p), p.lp_reward_at_height(h));
+    }
+
+    #[test]
+    fn yolo_split_sum_invariant_holds_across_halvings() {
+        // The 4-output coinbase tx (Phase 4) must preserve total
+        // emission exactly: every nanoYOLO comes from the emission
+        // box and lands in either treasury, LP, or miner output.
+        let p = YoloEmissionParams::sigmachain_testnet();
+        for k in 0u32..=7 {
+            let h = k.saturating_mul(p.blocks_per_halving);
+            let total = yolo_emission_at_height(h, &p);
+            let split = yolo_miners_reward_at_height(h, &p)
+                + yolo_treasury_reward_at_height(h, &p)
+                + yolo_lp_reward_at_height(h, &p);
+            assert_eq!(split, total, "split mismatch at h={h} (k={k} halvings)");
+        }
     }
 }
