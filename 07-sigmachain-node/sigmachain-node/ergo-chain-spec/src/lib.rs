@@ -227,12 +227,28 @@ impl DifficultyParams {
         }
     }
 
-    /// SigmaChain testnet difficulty schedule. Phase 3.1 stub — clones
-    /// `testnet()`. Phase 3.2 will set `desired_interval_ms = 20_000`
-    /// (20 s blocks per the SigmaChain emission model) and scale the
-    /// epoch length to keep wall-clock voting windows comparable.
+    /// SigmaChain testnet difficulty schedule. Mirrors testnet shape
+    /// (no EIP-37, no v1 → v2 transition — SigmaChain launches at
+    /// `Interpreter60Version` directly), with two divergences:
+    ///
+    /// - `desired_interval_ms = 20_000` (20 s blocks per the YOLO
+    ///   emission contract; see `01-emission-tests/emission.es` line 37
+    ///   "blocksPerHalving: Int = 1577880 ~1 year at 20s blocks").
+    /// - `epoch_length = 6_144` (= Ergo mainnet's 1024 × 120/20). Scales
+    ///   to preserve roughly 34 hours of wall-clock per difficulty
+    ///   epoch, matching mainnet's adjustment cadence.
+    ///
+    /// Initial difficulty stays at `0x01` (testnet bootstrap level —
+    /// genesis miner can start mining instantly on a fresh chain).
     pub fn sigmachain_testnet() -> Self {
-        Self::testnet()
+        Self {
+            epoch_length: 6_144,
+            eip37_epoch_length: None,
+            eip37_activation_height: None,
+            v2_activation: None,
+            initial_difficulty: vec![0x01],
+            desired_interval_ms: 20_000,
+        }
     }
 
     /// Schedule for the given [`Network`].
@@ -300,12 +316,22 @@ impl VotingParams {
         }
     }
 
-    /// SigmaChain testnet voting params. Phase 3.1 stub — clones
-    /// `testnet()`. Phase 3.2 will scale `voting_length` to match the
-    /// shorter SigmaChain block interval (target: comparable wall-clock
-    /// voting window).
+    /// SigmaChain testnet voting params. `voting_length = 6_144`
+    /// matches the difficulty epoch so a single epoch boundary serves
+    /// both adjustment and vote-counting (Ergo mainnet uses the same
+    /// alignment: `chain.voting.votingLength == chain.epochLength`).
+    /// At 20 s blocks, 6_144 blocks = ~34 h wall-clock — comparable to
+    /// mainnet's ~34 h (1024 × 120 s). `soft_fork_epochs` and
+    /// `activation_epochs` stay at 32. No `version2_activation`:
+    /// SigmaChain launches at `Interpreter60Version` and never carries
+    /// a v1 → v2 transition.
     pub const fn sigmachain_testnet() -> Self {
-        Self::testnet()
+        Self {
+            voting_length: 6_144,
+            soft_fork_epochs: 32,
+            activation_epochs: 32,
+            version2_activation: None,
+        }
     }
 
     /// `softForkApproved(votes) = votes > votingLength * softForkEpochs
@@ -554,12 +580,19 @@ impl BlockTimingParams {
         }
     }
 
-    /// SigmaChain testnet timing. Phase 3.1 stub — clones `testnet()`.
-    /// Phase 3.2 sets `desired_interval_ms = 20_000` (20 s blocks per
-    /// emission.es) and `header_chain_diff = 600` (~200 min freshness
-    /// tolerance, comparable to mainnet's ~3.3 h).
+    /// SigmaChain testnet timing. `desired_interval_ms = 20_000` per
+    /// the YOLO emission contract; `header_chain_diff = 600` so the
+    /// freshness threshold is `20_000 × 600 = 12_000_000 ms = 200
+    /// minutes` — comparable to Ergo mainnet's 200 min (`120_000 × 100`)
+    /// rather than Ergo testnet's much more permissive 600 min. We
+    /// pick mainnet-equivalent freshness because SigmaChain testnet's
+    /// primary purpose is integration testing of the YoloDAO contracts
+    /// at production parity, not validator-friendly sparse uptime.
     pub const fn sigmachain_testnet() -> Self {
-        Self::testnet()
+        Self {
+            desired_interval_ms: 20_000,
+            header_chain_diff: 600,
+        }
     }
 
     /// Sync-tip threshold the headers-chain-synced gate compares
@@ -1131,6 +1164,96 @@ mod tests {
             "SIGMACHAIN-TESTNET".parse::<Network>().unwrap(),
             Network::SigmaChainTestnet
         );
+    }
+
+    // ----- SigmaChain testnet block timing + voting (Phase 3.2) -----
+
+    #[test]
+    fn sigmachain_testnet_block_interval_is_20s() {
+        // The YOLO emission contract pins blocksPerHalving = 1_577_880
+        // = 365.25 × 24 × 3600 / 20, which only holds at 20 s blocks.
+        let t = BlockTimingParams::sigmachain_testnet();
+        assert_eq!(t.desired_interval_ms, 20_000);
+    }
+
+    #[test]
+    fn sigmachain_testnet_header_freshness_matches_mainnet_minutes() {
+        // header_chain_diff = 600 at 20 s blocks gives
+        // 20_000 × 600 = 12_000_000 ms = 200 minutes, equal to Ergo
+        // mainnet's freshness window. Same wall-clock as mainnet, but
+        // for a faster chain.
+        let t = BlockTimingParams::sigmachain_testnet();
+        assert_eq!(t.header_chain_diff, 600);
+        assert_eq!(t.header_freshness_threshold_ms(), 12_000_000);
+        assert_eq!(
+            t.header_freshness_threshold_ms(),
+            BlockTimingParams::mainnet().header_freshness_threshold_ms()
+        );
+    }
+
+    #[test]
+    fn sigmachain_testnet_difficulty_skips_v1_to_v2_and_eip37() {
+        // SigmaChain launches at Interpreter60Version (= 4) at genesis,
+        // mirroring Ergo testnet's launch — no v1 → v2 transition and
+        // no EIP-37 boundary. Difficulty interpolator stays on a
+        // single epoch_length throughout.
+        let d = DifficultyParams::sigmachain_testnet();
+        assert!(d.v2_activation.is_none());
+        assert_eq!(d.eip37_epoch_length, None);
+        assert_eq!(d.eip37_activation_height, None);
+    }
+
+    #[test]
+    fn sigmachain_testnet_difficulty_epoch_preserves_mainnet_wall_clock() {
+        // Ergo mainnet difficulty epoch: 1024 blocks × 120 s = ~34 h.
+        // SigmaChain at 20 s blocks needs 6144 blocks for the same
+        // wall-clock: 6144 × 20 = 122_880 s = ~34.13 h.
+        let d = DifficultyParams::sigmachain_testnet();
+        assert_eq!(d.epoch_length, 6_144);
+        let wall_clock_s = u64::from(d.epoch_length) * d.desired_interval_ms / 1000;
+        // Within 1% of mainnet's 1024 × 120 = 122_880 s.
+        let mainnet_wall_clock_s: u64 = 1024 * 120;
+        assert_eq!(wall_clock_s, mainnet_wall_clock_s);
+    }
+
+    #[test]
+    fn sigmachain_testnet_initial_difficulty_is_one() {
+        // Testnet-style genesis bootstrap: any miner can produce the
+        // first block instantly. Real difficulty climbs from epoch 1.
+        let d = DifficultyParams::sigmachain_testnet();
+        assert_eq!(d.initial_difficulty, vec![0x01]);
+    }
+
+    #[test]
+    fn sigmachain_testnet_voting_length_matches_difficulty_epoch() {
+        // Aligning the voting epoch with the difficulty epoch mirrors
+        // Ergo mainnet (1024 / 1024) — vote-counting boundaries land
+        // on difficulty-recalc boundaries.
+        let d = DifficultyParams::sigmachain_testnet();
+        let v = VotingParams::sigmachain_testnet();
+        assert_eq!(v.voting_length, d.epoch_length);
+        assert_eq!(v.voting_length, 6_144);
+    }
+
+    #[test]
+    fn sigmachain_testnet_voting_thresholds_track_voting_length() {
+        let v = VotingParams::sigmachain_testnet();
+        // softForkApproved boundary: votes > 6144 × 32 × 9 / 10 = 176_947.
+        assert!(!v.soft_fork_approved(176_947));
+        assert!(v.soft_fork_approved(176_948));
+        // changeApproved boundary: count > 6144 / 2 = 3072.
+        assert!(!v.change_approved(3072));
+        assert!(v.change_approved(3073));
+    }
+
+    #[test]
+    fn chain_spec_sigmachain_testnet_uses_20s_interval_everywhere() {
+        // BlockTimingParams and DifficultyParams must agree on the
+        // block interval — they are independent narrow views of the
+        // same physical parameter.
+        let s = ChainSpec::sigmachain_testnet();
+        assert_eq!(s.block_timing.desired_interval_ms, 20_000);
+        assert_eq!(s.difficulty.desired_interval_ms, 20_000);
     }
 
     #[test]
