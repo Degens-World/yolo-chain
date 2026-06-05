@@ -123,6 +123,18 @@ pub struct BlockValidationContext<'a> {
     /// Mirrors Scala `mainnet.conf` `ergo.node.checkpoint`. `None` means
     /// fully validate every block.
     pub script_validation_checkpoint: Option<(u32, [u8; 32])>,
+    /// When `true`, the block is rejected if any transaction other
+    /// than the coinbase (index 0) carries an input that opts into
+    /// the storage-rent path (empty proof + context-extension variable
+    /// 127). This is the SigmaChain-only consensus rule: only the
+    /// block's miner — who builds the coinbase tx — may sweep
+    /// rent-eligible boxes. On Ergo mainnet / testnet leave this
+    /// `false` so anyone can collect rent (matches upstream).
+    ///
+    /// Wiring: the chain spec discriminator
+    /// `Network::SigmaChainTestnet` flips this to `true` at block
+    /// validation entry. Mainnet / testnet leave it `false`.
+    pub enforce_miner_only_storage_rent: bool,
 }
 
 /// Failures raised by [`validate_full_block`] /
@@ -181,6 +193,25 @@ pub enum BlockValidationError {
         index: usize,
         /// The underlying transaction-validation error.
         error: ValidationError,
+    },
+
+    /// SigmaChain-only: a non-coinbase transaction opted into the
+    /// storage-rent path (input with empty proof + context-extension
+    /// variable 127). Only the block miner — who builds the coinbase
+    /// tx at index 0 — may sweep rent-eligible boxes on SigmaChain.
+    /// Fires only when
+    /// [`BlockValidationContext::enforce_miner_only_storage_rent`] is
+    /// `true`.
+    #[error(
+        "non-coinbase tx {tx_index} input {input_index} claims storage rent — \
+         SigmaChain requires rent claims to live in the coinbase tx (index 0)"
+    )]
+    NonCoinbaseStorageRentClaim {
+        /// Block-relative index of the offending transaction.
+        tx_index: usize,
+        /// Index of the input within that transaction that opted into
+        /// the storage-rent path.
+        input_index: usize,
     },
 
     /// Cumulative JIT cost across all transactions exceeded the per-block limit.
@@ -419,6 +450,48 @@ pub(crate) fn check_block_transactions_size(
             size,
             max: max_block_size,
         });
+    }
+    Ok(())
+}
+
+/// SigmaChain-only block-level check: reject any non-coinbase
+/// transaction that opts into the storage-rent path.
+///
+/// A transaction opts in by carrying at least one input with both
+/// an empty spending proof and the context-extension variable id
+/// `127` populated — exactly the predicate
+/// `tx/script.rs::is_storage_rent_eligible` uses to enter the
+/// rent-collection branch.
+///
+/// On Ergo any transaction may do this; on SigmaChain only the
+/// block's coinbase emission transaction (index 0) may. Miners that
+/// want to sweep rent-eligible boxes append them as additional
+/// inputs to the coinbase (and the recreated outputs as additional
+/// outputs after the four emission outputs that emission.es
+/// constrains positionally).
+pub(crate) fn check_miner_only_storage_rent(
+    txs: &[Transaction],
+) -> Result<(), BlockValidationError> {
+    /// Same constant as `crate::tx::script::STORAGE_INDEX_VAR_ID`.
+    /// Duplicated here so this block-level check stays independent
+    /// of the per-tx script module.
+    const STORAGE_INDEX_VAR_ID: u8 = 127;
+
+    for (tx_index, tx) in txs.iter().enumerate().skip(1) {
+        for (input_index, input) in tx.inputs.iter().enumerate() {
+            let proof_empty = input.spending_proof.proof.is_empty();
+            let has_storage_var = input
+                .spending_proof
+                .extension
+                .values
+                .contains_key(&STORAGE_INDEX_VAR_ID);
+            if proof_empty && has_storage_var {
+                return Err(BlockValidationError::NonCoinbaseStorageRentClaim {
+                    tx_index,
+                    input_index,
+                });
+            }
+        }
     }
     Ok(())
 }
@@ -1017,6 +1090,19 @@ pub fn validate_full_block(
         ctx.params.max_block_size,
     )?;
 
+    // 4b. SigmaChain miner-only storage rent check. Fires only when
+    // `enforce_miner_only_storage_rent` is `true` (set by
+    // Network::SigmaChainTestnet at the validation boundary). Scans
+    // every non-coinbase tx; if any opts into the storage-rent path
+    // (empty proof + context-extension variable 127 on any input),
+    // the block is rejected. The coinbase tx (index 0) is permitted
+    // to claim rent by appending rent-eligible inputs after the
+    // emission box. Mirrors the same check in
+    // `validate_full_block_parallel_impl`.
+    if ctx.enforce_miner_only_storage_rent {
+        check_miner_only_storage_rent(txs)?;
+    }
+
     // 5. Per-tx validation with intra-block UTXO overlay
     // Extract raw headers for the tx validation layer (which takes &[Header]).
     let raw_last_headers: Vec<Header> = ctx
@@ -1276,6 +1362,12 @@ fn validate_full_block_parallel_impl(
         header.version,
         ctx.params.max_block_size,
     )?;
+
+    // SigmaChain miner-only storage rent check. See the same block
+    // in `validate_full_block` for the rationale — kept in lockstep.
+    if ctx.enforce_miner_only_storage_rent {
+        check_miner_only_storage_rent(txs)?;
+    }
 
     // Layered parallel tx validation
     let layering = build_tx_layers(txs)?;
@@ -2406,5 +2498,172 @@ mod interlinks_tests {
         let current_ext = ext_with_links([1; 32], &expected);
 
         validate_interlinks(&current_ext, &parent, &parent_ext).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod miner_only_storage_rent_tests {
+    //! Tests for the SigmaChain-only `check_miner_only_storage_rent`
+    //! block-level consensus rule (Phase 4.5).
+
+    use super::*;
+    use ergo_primitives::digest::Digest32;
+    use ergo_ser::ergo_box::ErgoBoxCandidate;
+    use ergo_ser::input::{ContextExtension, Input, SpendingProof};
+    use ergo_ser::register::AdditionalRegisters;
+    use ergo_ser::sigma_type::SigmaType;
+    use ergo_ser::sigma_value::SigmaValue;
+
+    fn dummy_box_id(seed: u8) -> Digest32 {
+        Digest32::from_bytes([seed; 32])
+    }
+
+    /// Build an input that opts into the storage-rent path: empty
+    /// proof + context-extension variable 127 populated.
+    fn rent_claim_input(seed: u8) -> Input {
+        let mut ext = ContextExtension::empty();
+        ext.values
+            .insert(127, (SigmaType::SShort, SigmaValue::Short(0)));
+        Input {
+            box_id: dummy_box_id(seed),
+            spending_proof: SpendingProof::new(Vec::new(), ext).unwrap(),
+        }
+    }
+
+    /// Build an input that does NOT opt into the rent path: empty
+    /// proof, no variable 127. Still "structurally rent-shaped" but
+    /// the missing var means is_storage_rent_eligible would reject it.
+    fn empty_proof_input_without_var127(seed: u8) -> Input {
+        Input {
+            box_id: dummy_box_id(seed),
+            spending_proof: SpendingProof::new(Vec::new(), ContextExtension::empty()).unwrap(),
+        }
+    }
+
+    /// Build an input with a non-empty proof (a normal signed spend
+    /// that the rent path never matches).
+    fn signed_input(seed: u8) -> Input {
+        let mut ext = ContextExtension::empty();
+        // Carry var 127 anyway — the proof-empty check should still
+        // gate the rule out so this is a non-rent input.
+        ext.values
+            .insert(127, (SigmaType::SShort, SigmaValue::Short(0)));
+        Input {
+            box_id: dummy_box_id(seed),
+            spending_proof: SpendingProof::new(vec![0xAA; 32], ext).unwrap(),
+        }
+    }
+
+    /// Synthetic tx with the given inputs and a single dummy output.
+    fn tx_with_inputs(inputs: Vec<Input>) -> Transaction {
+        let candidate = ErgoBoxCandidate::new(
+            1_000,
+            crate::block::miner_only_storage_rent_tests::simple_tree(),
+            0,
+            Vec::new(),
+            AdditionalRegisters::empty(),
+        )
+        .unwrap();
+        Transaction {
+            inputs,
+            data_inputs: Vec::new(),
+            output_candidates: vec![candidate],
+        }
+    }
+
+    fn simple_tree() -> ergo_ser::ergo_tree::ErgoTree {
+        ergo_ser::ergo_tree::ErgoTree {
+            version: 0,
+            has_size: true,
+            constant_segregation: true,
+            constants: vec![(SigmaType::SBoolean, SigmaValue::Boolean(true))],
+            body: ergo_ser::opcode::Expr::Const {
+                tpe: SigmaType::SBoolean,
+                val: SigmaValue::Boolean(true),
+            },
+        }
+    }
+
+    #[test]
+    fn allows_coinbase_to_claim_rent() {
+        // The single coinbase tx (index 0) opts into the rent path.
+        // Rule must allow this — the coinbase IS the miner's tx.
+        let txs = vec![tx_with_inputs(vec![rent_claim_input(0x01)])];
+        check_miner_only_storage_rent(&txs).expect("coinbase may claim rent");
+    }
+
+    #[test]
+    fn rejects_non_coinbase_tx_claiming_rent() {
+        // Tx 0 is normal, tx 1 opts into rent.
+        let txs = vec![
+            tx_with_inputs(vec![signed_input(0x01)]),
+            tx_with_inputs(vec![rent_claim_input(0x02)]),
+        ];
+        let err = check_miner_only_storage_rent(&txs).expect_err("must reject");
+        match err {
+            BlockValidationError::NonCoinbaseStorageRentClaim {
+                tx_index,
+                input_index,
+            } => {
+                assert_eq!(tx_index, 1);
+                assert_eq!(input_index, 0);
+            }
+            other => panic!("expected NonCoinbaseStorageRentClaim, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_first_non_coinbase_rent_claim_input() {
+        // Tx 2 has two rent-claim inputs. The error must point at
+        // the FIRST one (index 0 within the tx) so the operator
+        // sees the earliest offender.
+        let txs = vec![
+            tx_with_inputs(vec![signed_input(0x10)]),
+            tx_with_inputs(vec![signed_input(0x20)]),
+            tx_with_inputs(vec![rent_claim_input(0x30), rent_claim_input(0x31)]),
+        ];
+        let err = check_miner_only_storage_rent(&txs).expect_err("must reject");
+        match err {
+            BlockValidationError::NonCoinbaseStorageRentClaim {
+                tx_index,
+                input_index,
+            } => {
+                assert_eq!(tx_index, 2);
+                assert_eq!(input_index, 0);
+            }
+            other => panic!("expected NonCoinbaseStorageRentClaim, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allows_non_coinbase_signed_tx() {
+        // A normal signed tx (non-empty proof) at non-zero index
+        // never trips the rule, even if it carries var 127 in the
+        // extension.
+        let txs = vec![
+            tx_with_inputs(vec![rent_claim_input(0x01)]),
+            tx_with_inputs(vec![signed_input(0x02)]),
+        ];
+        check_miner_only_storage_rent(&txs).expect("signed tx is fine");
+    }
+
+    #[test]
+    fn allows_non_coinbase_with_empty_proof_but_no_var_127() {
+        // Empty proof alone isn't a rent claim — only the
+        // proof_empty + var_127 combo qualifies. A degenerate input
+        // missing both should not trip the rule (it'll fail
+        // elsewhere in validation, but not here).
+        let txs = vec![
+            tx_with_inputs(vec![rent_claim_input(0x01)]),
+            tx_with_inputs(vec![empty_proof_input_without_var127(0x02)]),
+        ];
+        check_miner_only_storage_rent(&txs).expect("missing var 127 = not a rent claim");
+    }
+
+    #[test]
+    fn allows_empty_block() {
+        // No transactions at all → trivially passes.
+        let txs: Vec<Transaction> = Vec::new();
+        check_miner_only_storage_rent(&txs).expect("empty block");
     }
 }

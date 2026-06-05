@@ -292,6 +292,7 @@ fn full_block_v2_700k_with_state() {
             soft_fork_state: None,
             last_headers: &checked_last,
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let checked_header =
             ergo_validation::header::CheckedHeader::trust_me(header.clone(), *header_id);

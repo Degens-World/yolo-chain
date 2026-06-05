@@ -267,6 +267,7 @@ fn block_validate_full_block_700k_v2_pipeline() {
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let checked_header = CheckedHeader::trust_me(header.clone(), *header_id);
         match validate_full_block(checked_header, &bt, &ext, &block_ctx) {
@@ -327,6 +328,7 @@ fn run_validate_full_block_range(blocks_path: &str, headers_path: &str, label: &
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let checked_header = CheckedHeader::trust_me(header.clone(), *header_id);
         match validate_full_block(checked_header, &bt, &ext, &block_ctx) {
@@ -418,6 +420,7 @@ fn validate_full_block_eip37_activation() {
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let checked_header = CheckedHeader::trust_me(header.clone(), *header_id);
         match validate_full_block(checked_header, &bt, &ext, &block_ctx) {
@@ -482,6 +485,7 @@ fn parallel_equivalent_to_sequential_on_mainnet_700k() {
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let ctx_par = BlockValidationContext {
             parent: &checked_parent,
@@ -492,6 +496,7 @@ fn parallel_equivalent_to_sequential_on_mainnet_700k() {
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
 
         let h_seq = CheckedHeader::trust_me(header.clone(), *header_id);
@@ -592,6 +597,7 @@ fn checkpoint_mismatch_at_pinned_height_hard_fails() {
         soft_fork_state: None,
         last_headers: &[],
         script_validation_checkpoint: bad_ckpt,
+        enforce_miner_only_storage_rent: false,
     };
 
     let h = CheckedHeader::trust_me(header.clone(), *header_id);
@@ -646,6 +652,7 @@ fn checkpoint_match_at_pinned_height_passes_through() {
         soft_fork_state: None,
         last_headers: &[],
         script_validation_checkpoint: good_ckpt,
+        enforce_miner_only_storage_rent: false,
     };
 
     let h = CheckedHeader::trust_me(header.clone(), *header_id);
@@ -713,6 +720,7 @@ fn rule_306_rejection_parity_across_sequential_and_parallel_paths() {
         soft_fork_state: None,
         last_headers: &[],
         script_validation_checkpoint: None,
+        enforce_miner_only_storage_rent: false,
     };
     let ctx_par = BlockValidationContext {
         parent: &checked_parent,
@@ -723,6 +731,7 @@ fn rule_306_rejection_parity_across_sequential_and_parallel_paths() {
         soft_fork_state: None,
         last_headers: &[],
         script_validation_checkpoint: None,
+        enforce_miner_only_storage_rent: false,
     };
     let h_seq = CheckedHeader::trust_me(header.clone(), *header_id);
     let h_par = CheckedHeader::trust_me(header.clone(), *header_id);
@@ -805,6 +814,7 @@ fn parallel_equivalent_to_sequential_on_committed_multitx_blocks() {
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let ctx_par = BlockValidationContext {
             parent: &checked_parent,
@@ -815,6 +825,7 @@ fn parallel_equivalent_to_sequential_on_committed_multitx_blocks() {
             soft_fork_state: None,
             last_headers: &[],
             script_validation_checkpoint: None,
+            enforce_miner_only_storage_rent: false,
         };
         let h_seq = CheckedHeader::trust_me(header.clone(), *header_id);
         let h_par = CheckedHeader::trust_me(header.clone(), *header_id);

@@ -556,6 +556,12 @@ fn process_block_utxo(
         soft_fork_state,
         last_headers,
         script_validation_checkpoint,
+        // SigmaChain miner-only storage rent rule. Disabled here
+        // because this block-processor is the Ergo path; the
+        // SigmaChain node sets this `true` when the chain-spec
+        // is `Network::SigmaChainTestnet`. Plumbed via a separate
+        // network-aware constructor in a later phase.
+        enforce_miner_only_storage_rent: false,
     };
 
     // 8. Validate the full block (no PoW/difficulty — already validated by header pipeline)
@@ -1035,6 +1041,10 @@ fn process_block_digest(
         soft_fork_state,
         last_headers,
         script_validation_checkpoint,
+        // SigmaChain miner-only storage rent rule — see the sibling
+        // ctx construction above for context. Disabled here (Ergo
+        // path).
+        enforce_miner_only_storage_rent: false,
     };
 
     let t0 = Instant::now();
