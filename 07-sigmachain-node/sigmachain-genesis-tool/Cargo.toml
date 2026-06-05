@@ -13,4 +13,6 @@ path = "src/main.rs"
 [dependencies]
 ergoscript-compiler = { git = "https://github.com/cannonQ/sigma-rust.git", rev = "7ea8dc7d" }
 ergotree-ir         = { git = "https://github.com/cannonQ/sigma-rust.git", rev = "7ea8dc7d" }
+blake2              = "0.10"
 hex                 = "0.4"
+serde_json          = "1"

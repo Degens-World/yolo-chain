@@ -19,6 +19,8 @@
 
 use std::process::ExitCode;
 
+use blake2::digest::consts::U32;
+use blake2::{Blake2b, Digest};
 use ergoscript_compiler::compiler::compile_canonical;
 use ergoscript_compiler::script_env::ScriptEnv;
 use ergotree_ir::serialization::SigmaSerializable;
@@ -135,5 +137,110 @@ fn main() -> ExitCode {
         };
         eprintln!("  {tag}  {name}");
     }
+
+    if let Err(e) = write_genesis_boxes_json(&printed) {
+        eprintln!("error: writing genesis_boxes.json failed: {e}");
+        return ExitCode::FAILURE;
+    }
+
     ExitCode::SUCCESS
+}
+
+/// Total nanoYOLO locked in the genesis emission box: 176,525,325 YOLO
+/// in nano units. Sourced from `01-emission-tests/emission_model.py`
+/// `genesis_box_value()`; sum of 5 explicit halving epochs + 15 tail
+/// epochs at MIN_REWARD = 1 YOLO.
+const GENESIS_EMISSION_VALUE_NANO: u64 = 176_525_325_000_000_000;
+
+/// Deterministic seed for the emission NFT token id. Any node that
+/// wants to verify the genesis emission box's `tokens(0)._1` can
+/// recompute this hash and bind it to consensus parity.
+const EMISSION_NFT_SEED: &[u8] = b"SigmaChain testnet emission NFT v1";
+
+/// Genesis path conventionally uses an all-zero "transaction id" since
+/// no minting transaction exists before block 1.
+const GENESIS_TX_ID_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Where the generated JSON lands. Two consumers `include_str!` from
+/// here at parallel relative paths (chain-spec from
+/// `ergo-chain-spec/src/lib.rs`, node from `ergo-node/src/genesis.rs`).
+const GENESIS_JSON_PATH: &str = "/home/cq/working-files/yolo-chain/07-sigmachain-node/sigmachain-node/test-vectors/sigmachain-testnet/genesis_boxes.json";
+
+fn blake2b256(data: &[u8]) -> [u8; 32] {
+    let mut h = Blake2b::<U32>::new();
+    h.update(data);
+    let out = h.finalize();
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&out);
+    arr
+}
+
+/// Encode 32-byte payload as a sigma `Coll[Byte]` constant in the
+/// register hex format expected by `additionalRegisters` —
+/// `0e20<32-byte hex>`. `0e` is the type tag for `Coll[Byte]`, `20`
+/// is the VLQ length prefix (= 32).
+fn encode_coll_byte_32(payload: &[u8; 32]) -> String {
+    format!("0e20{}", hex::encode(payload))
+}
+
+fn write_genesis_boxes_json(
+    compiled: &[(String, String, Option<bool>)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let find = |needle: &str| -> &str {
+        compiled
+            .iter()
+            .find(|(n, _, _)| n == needle)
+            .map(|(_, hex, _)| hex.as_str())
+            .expect("compile target missing")
+    };
+
+    let emission_hex = find("emission");
+    let treasury_hex = find("treasury_accumulation");
+    let lp_hex = find("lp_accumulation");
+
+    let treasury_bytes = hex::decode(treasury_hex)?;
+    let lp_bytes = hex::decode(lp_hex)?;
+    let treasury_hash = blake2b256(&treasury_bytes);
+    let lp_hash = blake2b256(&lp_bytes);
+    let emission_nft_id = blake2b256(EMISSION_NFT_SEED);
+
+    let r4 = encode_coll_byte_32(&treasury_hash);
+    let r5 = encode_coll_byte_32(&lp_hash);
+
+    let box_json = serde_json::json!([
+        {
+            "value": GENESIS_EMISSION_VALUE_NANO,
+            "ergoTree": emission_hex,
+            "creationHeight": 0,
+            "assets": [
+                {
+                    "tokenId": hex::encode(emission_nft_id),
+                    "amount": 1
+                }
+            ],
+            "additionalRegisters": {
+                "R4": r4,
+                "R5": r5,
+            },
+            "transactionId": GENESIS_TX_ID_HEX,
+            "index": 0
+        }
+    ]);
+
+    let serialized = serde_json::to_string_pretty(&box_json)?;
+    let path = std::path::Path::new(GENESIS_JSON_PATH);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, format!("{serialized}\n"))?;
+
+    eprintln!();
+    eprintln!("genesis_boxes.json written to:");
+    eprintln!("  {GENESIS_JSON_PATH}");
+    eprintln!();
+    eprintln!("derived 32-byte ids:");
+    eprintln!("  emission NFT id     = {}", hex::encode(emission_nft_id));
+    eprintln!("  treasury script hash = {}", hex::encode(treasury_hash));
+    eprintln!("  lp script hash       = {}", hex::encode(lp_hash));
+    Ok(())
 }
