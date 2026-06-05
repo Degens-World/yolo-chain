@@ -27,7 +27,11 @@ use ergo_ser::register::AdditionalRegisters;
 use ergo_ser::token::Token;
 use ergo_ser::transaction::{bytes_to_sign, Transaction};
 
-use crate::emission_rules::{miners_reward_at_height, MonetarySettings};
+use crate::emission_rules::{
+    miners_reward_at_height, yolo_emission_at_height, yolo_lp_reward_at_height,
+    yolo_miners_reward_at_height, yolo_treasury_reward_at_height, MonetarySettings,
+    YoloEmissionParams,
+};
 use crate::error::MiningError;
 use crate::reward_script::reward_output_script;
 
@@ -137,6 +141,143 @@ pub fn build_pre_eip27_emission_tx(
         inputs: vec![input],
         data_inputs: Vec::new(),
         output_candidates: vec![new_emission_box, miner_box],
+    })
+}
+
+/// Build the SigmaChain (YOLO) emission transaction for a candidate
+/// at `next_height`. Four outputs in fixed order so emission.es can
+/// reference them positionally:
+///
+/// - `OUTPUTS(0)` — new emission box, value reduced by the full
+///   `block_reward(next_height)`, with the input's tokens, ergo_tree,
+///   R4 (treasury hash), and R5 (LP hash) preserved verbatim and
+///   `creationHeight` bumped to `next_height`.
+/// - `OUTPUTS(1)` — treasury accumulation box, value =
+///   `treasury_reward = block_reward * treasury_share_bps / 10_000`,
+///   locked by `treasury_script_bytes` (must hash to the input's R4).
+/// - `OUTPUTS(2)` — LP accumulation box, value = `lp_reward = block_reward
+///   * lp_share_bps / 10_000`, locked by `lp_script_bytes` (must hash
+///   to the input's R5).
+/// - `OUTPUTS(3)` — miner reward box, value = `block_reward -
+///   treasury_reward - lp_reward` (≈ 85%), locked by
+///   `reward_output_script(miner_pk)`.
+///
+/// The miner share is computed as the remainder rather than as a fixed
+/// 85% so no nanoYOLO is lost to integer division across the three
+/// non-emission outputs (matches `YoloEmissionParams::miner_reward_at_height`).
+///
+/// `treasury_script_bytes` and `lp_script_bytes` are the canonical
+/// ErgoTree wire bytes for `treasury_accumulation.es` and
+/// `lp_accumulation.es` — same constants that live in
+/// `ergo-chain-spec::yolo_genesis_scripts`. The caller is responsible
+/// for verifying blake2b256(treasury_script_bytes) ==
+/// input_emission_box.R4 (similarly for LP/R5) BEFORE calling this
+/// builder; emission.es enforces the same invariant on-chain, but a
+/// well-behaved miner avoids producing a block the validator will
+/// reject by checking up front.
+pub fn build_yolo_emission_tx(
+    input_emission_box: &ErgoBox,
+    miner_pk: &[u8; 33],
+    next_height: u32,
+    yolo: &YoloEmissionParams,
+    treasury_script_bytes: &[u8],
+    lp_script_bytes: &[u8],
+) -> Result<Transaction, MiningError> {
+    let block_reward = yolo_emission_at_height(next_height, yolo);
+    let treasury_reward = yolo_treasury_reward_at_height(next_height, yolo);
+    let lp_reward = yolo_lp_reward_at_height(next_height, yolo);
+    let miner_reward = yolo_miners_reward_at_height(next_height, yolo);
+    debug_assert_eq!(
+        miner_reward + treasury_reward + lp_reward,
+        block_reward,
+        "YoloEmissionParams split invariant violated at h={next_height}",
+    );
+
+    let input_value = input_emission_box.candidate.value;
+    if block_reward > input_value {
+        return Err(MiningError::EmissionInvariant {
+            op: "build_yolo_emission_tx",
+            reason: format!(
+                "emission box value {input_value} < block reward {block_reward} \
+                 at h={next_height}: SigmaChain emission curve is exhausted or input is wrong",
+            ),
+        });
+    }
+
+    // Output 0: updated emission box. Script, tokens, and R4/R5
+    // registers are preserved verbatim — emission.es checks all four.
+    let new_emission_box = ErgoBoxCandidate::new(
+        input_value - block_reward,
+        input_emission_box.candidate.ergo_tree().clone(),
+        next_height,
+        input_emission_box.candidate.tokens.clone(),
+        input_emission_box.candidate.additional_registers.clone(),
+    )
+    .map_err(|e| MiningError::IdComputation {
+        op: "yolo_new_emission_box",
+        reason: format!("{e:?}"),
+    })?;
+
+    // Output 1: treasury accumulation box. emission.es line 102 checks
+    // blake2b256(propositionBytes) == R4; the script bytes must hash
+    // to the value in input R4 or this block will be rejected.
+    let treasury_tree = parse_ergo_tree(treasury_script_bytes)?;
+    let treasury_box = ErgoBoxCandidate::from_trusted_raw_parts(
+        treasury_reward,
+        treasury_tree,
+        treasury_script_bytes.to_vec(),
+        next_height,
+        Vec::new(),
+        AdditionalRegisters::empty(),
+        vec![0x00],
+    );
+
+    // Output 2: LP accumulation box. emission.es line 108 mirrors the
+    // treasury check with R5.
+    let lp_tree = parse_ergo_tree(lp_script_bytes)?;
+    let lp_box = ErgoBoxCandidate::from_trusted_raw_parts(
+        lp_reward,
+        lp_tree,
+        lp_script_bytes.to_vec(),
+        next_height,
+        Vec::new(),
+        AdditionalRegisters::empty(),
+        vec![0x00],
+    );
+
+    // Output 3: miner reward box. Same shape as the Ergo coinbase's
+    // miner box — 54-byte reward script gated by HEIGHT.
+    let reward_script_bytes = reward_output_script(miner_pk).to_vec();
+    let reward_tree = parse_ergo_tree(&reward_script_bytes)?;
+    let miner_box = ErgoBoxCandidate::from_trusted_raw_parts(
+        miner_reward,
+        reward_tree,
+        reward_script_bytes,
+        next_height,
+        Vec::new(),
+        AdditionalRegisters::empty(),
+        vec![0x00],
+    );
+
+    let input = Input {
+        box_id: input_emission_box
+            .box_id()
+            .map_err(|e| MiningError::IdComputation {
+                op: "yolo_emission_box_id",
+                reason: format!("{e:?}"),
+            })?,
+        spending_proof: SpendingProof::new(Vec::new(), ContextExtension::empty()).map_err(|e| {
+            MiningError::IdComputation {
+                op: "yolo_empty_spending_proof",
+                reason: format!("{e:?}"),
+            }
+        })?,
+    };
+
+    Ok(Transaction {
+        inputs: vec![input],
+        data_inputs: Vec::new(),
+        output_candidates: vec![new_emission_box, treasury_box, lp_box, miner_box],
     })
 }
 
@@ -499,6 +640,155 @@ mod tests {
                     reason.contains("emission box value") && reason.contains("exhausted"),
                     "{reason}"
                 );
+            }
+            other => panic!("expected EmissionInvariant, got {other:?}"),
+        }
+    }
+
+    // ----- SigmaChain YOLO emission tx (Phase 4.4) -----
+
+    /// Build a synthetic input emission box at the SigmaChain genesis
+    /// state for use in the YOLO coinbase tests. Uses a real Ergo
+    /// emission tree as a stand-in for the SigmaChain emission script
+    /// — the builder doesn't validate the input's script, only
+    /// preserves it on the output side.
+    fn yolo_input_box_at(value: u64) -> ErgoBox {
+        let parent = load(699_999);
+        let real = ergo_box_from_output(&parent.emission_tx.outputs[0], &parent.emission_tx.id, 0);
+        let candidate = ErgoBoxCandidate::from_trusted_raw_parts(
+            value,
+            real.candidate.ergo_tree().clone(),
+            real.candidate.ergo_tree_bytes().to_vec(),
+            real.candidate.creation_height,
+            real.candidate.tokens.clone(),
+            AdditionalRegisters::empty(),
+            vec![0x00],
+        );
+        ErgoBox {
+            candidate,
+            transaction_id: real.transaction_id,
+            index: 0,
+        }
+    }
+
+    fn yolo_treasury_script() -> Vec<u8> {
+        ergo_chain_spec::yolo_genesis_scripts::treasury_accumulation_ergo_tree_bytes()
+    }
+
+    fn yolo_lp_script() -> Vec<u8> {
+        ergo_chain_spec::yolo_genesis_scripts::lp_accumulation_ergo_tree_bytes()
+    }
+
+    #[test]
+    fn yolo_emission_tx_has_four_outputs_at_genesis() {
+        // h = 0 → block reward 50 YOLO, split 42.5 / 5 / 2.5.
+        let yolo = YoloEmissionParams::sigmachain_testnet();
+        let value = 176_525_325_000_000_000u64;
+        let input_box = yolo_input_box_at(value);
+        // For the smoke test we use the actual treasury / LP bytes
+        // from the chain-spec module so the builder exercises the same
+        // parse path that production will hit.
+        let treasury_bytes = ergo_chain_spec::yolo_genesis_scripts::treasury_accumulation_ergo_tree_bytes();
+        let lp_bytes = ergo_chain_spec::yolo_genesis_scripts::lp_accumulation_ergo_tree_bytes();
+        let tx = build_yolo_emission_tx(
+            &input_box,
+            &[0x02u8; 33],
+            1,
+            &yolo,
+            &treasury_bytes,
+            &lp_bytes,
+        )
+        .expect("ok");
+        assert_eq!(tx.inputs.len(), 1, "one input (the emission box)");
+        assert_eq!(tx.output_candidates.len(), 4, "four outputs");
+        // Output values match the YoloEmissionParams split for h=1
+        // (still in the first halving epoch).
+        let new_emission = &tx.output_candidates[0];
+        let treasury = &tx.output_candidates[1];
+        let lp = &tx.output_candidates[2];
+        let miner = &tx.output_candidates[3];
+        assert_eq!(new_emission.value, value - 50_000_000_000);
+        assert_eq!(treasury.value, 5_000_000_000);
+        assert_eq!(lp.value, 2_500_000_000);
+        assert_eq!(miner.value, 42_500_000_000);
+        // Conservation: every nanoYOLO from the input is accounted for.
+        assert_eq!(
+            new_emission.value + treasury.value + lp.value + miner.value,
+            value,
+        );
+    }
+
+    #[test]
+    fn yolo_emission_tx_preserves_input_emission_box_identity() {
+        // Per emission.es: the new emission box (OUTPUTS(0)) must keep
+        // the same script, the same tokens, and the same R4/R5
+        // registers as the input. Confirm the builder preserves all
+        // three.
+        let yolo = YoloEmissionParams::sigmachain_testnet();
+        let input_box = yolo_input_box_at(yolo.initial_reward * 1000);
+        let tx = build_yolo_emission_tx(
+            &input_box,
+            &[0x02u8; 33],
+            10,
+            &yolo,
+            &yolo_treasury_script(),
+            &yolo_lp_script(),
+        )
+        .expect("ok");
+        let new_emission = &tx.output_candidates[0];
+        assert_eq!(
+            new_emission.ergo_tree_bytes(),
+            input_box.candidate.ergo_tree_bytes(),
+        );
+        assert_eq!(new_emission.tokens, input_box.candidate.tokens);
+        assert_eq!(
+            new_emission.additional_registers,
+            input_box.candidate.additional_registers,
+        );
+        assert_eq!(new_emission.creation_height, 10);
+    }
+
+    #[test]
+    fn yolo_emission_tx_split_holds_at_tail_emission() {
+        // h = 5 * blocks_per_halving → tail rate (1 YOLO/block).
+        // Treasury = 100M nano, LP = 50M nano, miner = 850M nano,
+        // sum = 1e9 = MIN_REWARD.
+        let yolo = YoloEmissionParams::sigmachain_testnet();
+        let value = 10_000_000_000u64;
+        let input_box = yolo_input_box_at(value);
+        let h = 5 * yolo.blocks_per_halving + 17; // anywhere past the floor
+        let tx = build_yolo_emission_tx(
+            &input_box,
+            &[0x02u8; 33],
+            h,
+            &yolo,
+            &yolo_treasury_script(),
+            &yolo_lp_script(),
+        )
+        .expect("ok");
+        assert_eq!(tx.output_candidates[0].value, value - 1_000_000_000);
+        assert_eq!(tx.output_candidates[1].value, 100_000_000);
+        assert_eq!(tx.output_candidates[2].value, 50_000_000);
+        assert_eq!(tx.output_candidates[3].value, 850_000_000);
+    }
+
+    #[test]
+    fn yolo_emission_tx_rejects_exhausted_box() {
+        let yolo = YoloEmissionParams::sigmachain_testnet();
+        let input_box = yolo_input_box_at(1);
+        let err = build_yolo_emission_tx(
+            &input_box,
+            &[0x02u8; 33],
+            1,
+            &yolo,
+            &yolo_treasury_script(),
+            &yolo_lp_script(),
+        )
+        .expect_err("must reject");
+        match err {
+            MiningError::EmissionInvariant { op, reason } => {
+                assert_eq!(op, "build_yolo_emission_tx");
+                assert!(reason.contains("block reward"), "{reason}");
             }
             other => panic!("expected EmissionInvariant, got {other:?}"),
         }
