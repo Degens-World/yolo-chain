@@ -190,7 +190,11 @@
 </header>
 
 <div class="lead">
-  <strong>SigmaChain fork — Phase 4 complete (2026-06-05).</strong> The Rust node is forked, the YOLO emission curve is implemented, the genesis emission box is built (with the canonical compiled ErgoTree bytes for <code>emission.es</code>, <code>treasury_accumulation.es</code>, and <code>lp_accumulation.es</code> baked in), the 4-output YOLO coinbase tx builder is wired, and the miner-only storage rent consensus rule is enforced at block validation. <strong>3,832 tests pass across the full workspace, 0 failed.</strong>
+  <strong>SigmaChain fork — Phase 5 (mining bring-up) complete (2026-06-06).</strong> A single-node SigmaChain testnet boots, mines real blocks, and produces the 4-output YOLO coinbase byte-for-byte against the Python emission oracle (<code>01-emission-tests/emission_model.py</code>). Phase 5.1 wired <code>Network::SigmaChainTestnet</code> through node-boot config and flipped the miner-only storage-rent rule on at the validation boundary; Phase 5.2 pinned the deterministic genesis state digest; Phase 5.3 cleared a stack of bootstrap gates (no parent header at genesis, candidate builder unaware of YOLO dispatch, <code>last_applied_chain_window_10</code> requiring depth-10, launch-time <code>block_version</code> stuck at 1) and wired the YOLO emission context into <code>MiningHandle</code>. <strong>3,843 tests pass across the full workspace, 0 failed.</strong>
+</div>
+
+<div class="lead" style="border-left-color: var(--green);">
+  <strong>Live chain verified (2026-06-06).</strong> Booted the node, generated a fresh dev wallet, mined 10 blocks in ~2 seconds on CPU at initial difficulty 1. <code>GET /info</code> reports <code>fullHeight=10</code>, <code>stateRoot</code> matches the chain-spec pin, and every block's coinbase shows the expected 4-output split — at height 1 and height 10 the treasury/LP/miner outputs are 5e9 / 2.5e9 / 4.25e10 nanoYOLO (85/10/5), summing to the per-block 50 YOLO reward with exact nanoYOLO conservation against the input emission box.
 </div>
 
 <div class="lead" style="border-left-color: var(--blue);">
@@ -219,7 +223,7 @@
     <div class="label">Halvings, then 1-coin tail</div>
   </div>
   <div class="stat">
-    <div class="num">3,832</div>
+    <div class="num">3,843</div>
     <div class="label">Workspace Tests Passing</div>
   </div>
   <div class="stat">
@@ -326,6 +330,34 @@
   <h3>Phase 4.5 — Miner-only storage rent consensus rule <span class="phase-status badge done">Done</span></h3>
   <p>New block-level rule: any non-coinbase tx that opts into the storage-rent path (empty proof + context-extension variable 127 on any input) causes the block to be rejected with <code>NonCoinbaseStorageRentClaim { tx_index, input_index }</code>.</p>
   <p>Miners sweep rent inside the coinbase by appending rent-eligible inputs after the emission box and recreated outputs after the four positionally-constrained emission outputs. Gated by <code>BlockValidationContext::enforce_miner_only_storage_rent</code> — <code>false</code> on Ergo paths (byte-parity preserved), flipped <code>true</code> at the SigmaChain validation boundary.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 5.1 — Network config plumbing <span class="phase-status badge done">Done</span></h3>
+  <p>Threaded <code>Network</code> through the sync executor and into <code>BlockValidationContext</code> so the per-block storage-rent flag is set off network identity. <code>SyncExecutor</code> gained a <code>network</code> field (default <code>Mainnet</code>) with a <code>set_network()</code> setter the node-boot path calls once the config-derived <code>ChainSpec</code> is in hand. <code>block_proc.rs</code>'s two <code>BlockValidationContext</code> construction sites now set <code>enforce_miner_only_storage_rent: matches!(network, Network::SigmaChainTestnet)</code>; Ergo paths read <code>Network::Mainnet</code> / <code>Testnet</code> and leave the flag <code>false</code>, preserving byte-parity with upstream.</p>
+  <p>Sample <code>ergo-node/sigmachain-testnet.toml</code> ships with <code>network = "sigmachain-testnet"</code>, dedicated P2P / REST ports 9040 / 9054 (distinct from Ergo's 9020/9052 and 9030/9053), and placeholder dev secrets that are flagged in-comment for replacement before any non-loopback use.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 5.2 — Genesis state digest <span class="phase-status badge done">Done</span></h3>
+  <p>Computed the deterministic AVL+ <code>ADDigest</code> over the single SigmaChain genesis emission box and pinned it on <code>GenesisParams::sigmachain_testnet().state_digest</code>:</p>
+  <pre style="font-size: 12px; padding: 12px; background: var(--panel-hi); border: 1px solid var(--border); border-radius: 4px; overflow-x: auto;">c479b14ec41618461449eabcb162265c0a5a322180a54b2baf7615c08ccf8de901</pre>
+  <p>Two reproducibility tests in <code>ergo-state/tests/genesis_digest.rs</code> recompute the digest from the embedded JSON on every run and cross-check it against the chain-spec pin — any drift between the JSON and the constant fails CI. Diagnose-from-code, not from a running node.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 5.3 — Mining bring-up <span class="phase-status badge done">Done</span></h3>
+  <p>Cleared the bootstrap blockers the Phase 5 handoff doc glossed over (the Rust node was designed around Ergo's "block 1 is downloaded from peers" model and had no "block 1 is mined from a fresh chain" path). Five sub-commits split by gate:</p>
+  <ul>
+    <li><strong>5.3a</strong> — <code>validate_supported</code> permits <code>header_id = None</code> on SigmaChain so the very first boot doesn't have a chicken-and-egg with the not-yet-mined block 1 id.</li>
+    <li><strong>5.3b</strong> — three synced-tip predicates (<code>handle_mining_request</code>, <code>MiningTipSnapshot::synced</code>, the engine's gate in <code>build_and_publish</code>) relaxed so the height-0 / zeroed-id state reads as synced on SigmaChain. Ergo paths keep their <code>height &gt; 0</code> guard. Bundled with the dev-only CPU miner at <code>ergo-mining/examples/sigmachain_cpu_miner.rs</code> (Autolykos v2, ~80 lines, shells out to curl for HTTP so the lib gets no transport dep).</li>
+    <li><strong>5.3c</strong> — candidate builder grew a <code>parent_height == 0</code> branch that synthesizes an in-memory pseudo-parent (from <code>view.state_root()</code> + chain-spec initial difficulty), skips the parent-extension and parent-block-transactions reads (no such sections exist on a fresh chain), and consumes a caller-supplied <code>genesis_emission_box</code> instead of the prior-block lookup. The synthesized header's <code>blake2b256</code> lands in block 1's interlinks extension via <code>update_interlinks</code>'s <code>is_genesis</code> branch, so the byte recipe is consensus-bearing — recipe documented in-source.</li>
+    <li><strong>5.3d-ii</strong> — added a parity test that drives <code>build_yolo_emission_tx</code> at 12 probe heights covering the first block, the first three halving boundaries (probed at h ± 0, 1), the fifth halving where the curve floors at <code>min_reward</code>, and a deep tail-emission sample. Each height's (block_reward, miner, treasury, lp) split is cross-checked byte-for-byte against <code>01-emission-tests/emission_model.py</code> via a one-shot <code>python3</code> call.</li>
+    <li><strong>5.3d-i</strong> — wired the YOLO emission dispatch end-to-end. <code>MiningHandle</code> gained a <code>YoloEmissionContext</code> field (per-block params + the treasury/LP <code>ergo_tree</code> script bytes); the boot path attaches it when <code>chain_spec.emission_curve = Yolo(...)</code>; the candidate builder dispatches on it instead of the Ergo emission tx. Two adjacent fixes the bring-up surfaced: launch <code>block_version</code> overridden to <code>INTERPRETER_60_VERSION</code> (= 4) so the V2 Autolykos solution shape matches the header version on the re-parse path, and the bootstrap last-headers fallback extended from <code>parent_height == 0</code> to <code>parent_height &lt; 10</code> so blocks 2–9 don't EarlyIBD on the depth-10 chain window.</li>
+  </ul>
+  <p>Live chain stats (post-bring-up): 10 blocks mined in ~2 seconds CPU at initial difficulty 1; <code>GET /info</code> reports <code>fullHeight=10</code>; <code>GET /blocks/at/N + /blocks/{id}/transactions</code> confirms the 4-output coinbase at h=1 and h=10 with treasury=5e9, LP=2.5e9, miner=4.25e10 nanoYOLO (85/10/5 split, exact emission-box conservation). After bring-up the height-1 header_id was pinned into <code>GenesisParams::sigmachain_testnet().header_id</code> as the single canonical block 1 for SigmaChain testnet:</p>
+  <pre style="font-size: 12px; padding: 12px; background: var(--panel-hi); border: 1px solid var(--border); border-radius: 4px; overflow-x: auto;">0d411478999f51475d600a5131b331cd2d4efb1105fd7b17e32c7bfbce90fa84</pre>
+  <p style="font-size: 13px; color: var(--muted);">The Phase 5.3a <code>validate_supported</code> carve-out stays in place as a defensive escape hatch for dev workflows that unpin <code>header_id</code> while iterating. Phase 5.4 (YoloDAO integration test against the live node) is now unblocked.</p>
 </div>
 
 <h2>Trustless Peg — Architecture Spike (2026-06-05)</h2>
@@ -450,6 +482,14 @@
 <h2>Commit Trail (sigmachain-node-fork branch)</h2>
 <table>
   <tr><th>Commit</th><th>Phase</th></tr>
+  <tr><td><code>93dab09</code></td><td>Phase 5.3d-i: live SigmaChain testnet mines blocks 1-10</td></tr>
+  <tr><td><code>b8b95b9</code></td><td>Phase 5.3d-ii: pin YOLO emission split against Python oracle</td></tr>
+  <tr><td><code>8ed367f</code></td><td>Phase 5.3c: candidate builder handles SigmaChain genesis bootstrap</td></tr>
+  <tr><td><code>52d8b66</code></td><td>Phase 5.3b: relax three synced-tip gates for SigmaChain genesis mining</td></tr>
+  <tr><td><code>338045b</code></td><td>Phase 5.3a: permit SigmaChain bootstrap boot without header_id pin</td></tr>
+  <tr><td><code>d069377</code></td><td>Phase 5.2: pin SigmaChain testnet genesis state digest</td></tr>
+  <tr><td><code>51133f2</code></td><td>Phase 5.1: wire Network::SigmaChainTestnet through node-boot config</td></tr>
+  <tr><td><code>5ad9c55</code></td><td>Phase 5 handoff doc: testnet boot guide</td></tr>
   <tr><td><code>baeaa29</code></td><td>Bridge sketches v2: BurnReceipt + DSP + lock/mint bug fixes</td></tr>
   <tr><td><code>662054f</code></td><td>STATUS: trustless peg spike + arkadianet PR #13</td></tr>
   <tr><td><code>789feda</code></td><td>Bridge research: trustless YOLO↔Ergo peg sketches</td></tr>
@@ -471,18 +511,17 @@
 <h2>What's Next</h2>
 
 <div class="phase">
-  <h3>Phase 5 — Local testnet boot <span class="phase-status badge next">Next</span></h3>
-  <p>Spin up a single-node SigmaChain testnet, mine blocks, verify the genesis state digest. Then take the YoloDAO integration test from <code>06-governance/tests/integration_test.rs</code>, swap out the sigma-rust evaluator calls for real node-submitted transactions, run the full deposit → vote → execute → redeem lifecycle against the running node.</p>
+  <h3>Phase 5.4 — YoloDAO integration test against the live node <span class="phase-status badge next">Next</span></h3>
+  <p>Fork <code>06-governance/tests/integration_test.rs</code> (currently in-memory sigma-rust evaluation) into a variant that submits real transactions to the running SigmaChain node. Cover all seven governance spending paths (approval, execution, cancellation, freeze, migration approval, migration execute, plus deposit and redeem) over the deposit → vote → execute → redeem lifecycle, asserting state-root advance block by block.</p>
   <ul>
-    <li>Config plumbing: make <code>Network::SigmaChainTestnet</code> selectable from <code>ergo-node.toml</code></li>
-    <li>Set <code>enforce_miner_only_storage_rent: true</code> at the SigmaChain block-validation boundary</li>
-    <li>Capture the AVL+ state digest from genesis state and pin it on <code>GenesisParams::sigmachain_testnet</code> (currently a zero placeholder)</li>
-    <li>Verify block production, halving boundary (jump to height 1,577,880), and the miner-only rent rule end-to-end on a real chain</li>
+    <li>Replace each in-memory <code>evaluate</code> with: build <code>UnsignedTransaction</code>, sign with the proving interpreter, POST to <code>/transactions</code>, wait for the next block, fetch the resulting box state via <code>/utxo</code>, assert.</li>
+    <li>The voting epoch is 6,144 blocks (~34 h on 20s blocks). The test cannot grind through a real epoch — it needs either a test-mode epoch override or a fast-forward via <code>setHeight</code>.</li>
+    <li>Preserve all tokens in every tx (per memory rule: token-burning is a critical class of bug). Every non-script-consumed token gets a change output.</li>
   </ul>
 </div>
 
 <div class="phase">
-  <h3>Phase 6 — Documentation + STATUS rollover <span class="phase-status badge todo">After Phase 5</span></h3>
+  <h3>Phase 6 — Documentation + STATUS rollover <span class="phase-status badge todo">After Phase 5.4</span></h3>
   <p>Write <code>sigmachain-node/README.md</code> (build/configure/run), <code>sigmachain-node/docs/genesis.md</code> (how the state was constructed), <code>sigmachain-node/docs/fork-from-arkadianet.md</code> (every divergence).</p>
 </div>
 

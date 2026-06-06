@@ -146,6 +146,11 @@ pub(super) struct MiningTipSnapshot {
     best_full_height: u32,
     best_header_id: [u8; 32],
     best_header_height: u32,
+    /// SigmaChain bootstrap discriminator: when `true` the
+    /// height-0 / zeroed-id "fresh chain" state counts as synced
+    /// for mining purposes. Captured from `state.executor.network()`
+    /// at snapshot time. Ergo paths always set this `false`.
+    sigmachain_bootstrap: bool,
 }
 
 impl MiningTipSnapshot {
@@ -157,16 +162,36 @@ impl MiningTipSnapshot {
             best_full_height: cs.best_full_block_height,
             best_header_id: cs.best_header_id,
             best_header_height: cs.best_header_height,
+            sigmachain_bootstrap: matches!(
+                state.executor.network(),
+                ergo_chain_spec::Network::SigmaChainTestnet
+            ),
         }
     }
 
     /// The full live mining-gate predicate (identical to the serve-time gate
     /// and `CommittedSnapshot::synced`): a full block exists and the header
-    /// tip equals it. Never true at the zeroed genesis state.
+    /// tip equals it.
+    ///
+    /// SigmaChain bootstrap exception: at height 0 with both ids zero
+    /// (the unambiguous fresh-chain state) the gate treats the chain
+    /// as synced so block 1 can be mined. Ergo paths leave the field
+    /// `false` and the height-0 case stays rejected — their genesis
+    /// blocks are historic and they should never produce at height 0.
     pub(super) fn synced(&self) -> bool {
-        self.best_header_height == self.best_full_height
-            && self.best_full_height > 0
-            && self.best_header_id == self.best_full_id
+        if self.best_header_height != self.best_full_height
+            || self.best_header_id != self.best_full_id
+        {
+            return false;
+        }
+        if self.best_full_height > 0 {
+            return true;
+        }
+        // Height 0: only SigmaChain treats this as synced, and only when
+        // both ids are still the zero sentinel (no block has been mined
+        // yet). The id check above already enforces id-equality; an
+        // additional explicit zero check makes the invariant local.
+        self.sigmachain_bootstrap && self.best_full_id == [0u8; 32]
     }
 
     /// The current best-full tip id (the candidate's parent).
@@ -177,7 +202,9 @@ impl MiningTipSnapshot {
     /// Test-only constructor: the fields are module-private, so unit tests for
     /// [`decide_mining_signal`] build snapshots through this rather than
     /// standing up a full `NodeState`. A synced snapshot needs full==header
-    /// (same id + height) with height > 0.
+    /// (same id + height) with height > 0. Ergo-path semantics
+    /// (`sigmachain_bootstrap = false`); for SigmaChain-genesis test
+    /// scenarios use [`Self::for_test_sigmachain`].
     #[cfg(test)]
     pub(super) fn for_test(
         best_full_id: [u8; 32],
@@ -190,6 +217,26 @@ impl MiningTipSnapshot {
             best_full_height,
             best_header_id,
             best_header_height,
+            sigmachain_bootstrap: false,
+        }
+    }
+
+    /// SigmaChain-bootstrap test snapshot. Equivalent to [`Self::for_test`]
+    /// with `sigmachain_bootstrap = true`, exposing the height-0
+    /// genesis carve-out for unit tests.
+    #[cfg(test)]
+    pub(super) fn for_test_sigmachain(
+        best_full_id: [u8; 32],
+        best_full_height: u32,
+        best_header_id: [u8; 32],
+        best_header_height: u32,
+    ) -> Self {
+        Self {
+            best_full_id,
+            best_full_height,
+            best_header_id,
+            best_header_height,
+            sigmachain_bootstrap: true,
         }
     }
 }
@@ -266,6 +313,20 @@ pub(super) fn signal_mining_engine(
         Vec::new()
     };
     let mempool = ergo_mempool::MempoolReadSnapshot::from_pool(&state.mempool);
+    let is_sigmachain = matches!(
+        state.executor.network(),
+        ergo_chain_spec::Network::SigmaChainTestnet
+    );
+    // At SigmaChain genesis (height 0, no block 1 yet) the candidate
+    // builder cannot find a prior block's emission box. Parse the
+    // genesis emission box from the embedded chain-spec JSON and pass
+    // it through the intent; for every other tip state it stays None
+    // and the builder uses its normal parent-block lookup.
+    let genesis_emission_box = if is_sigmachain && now.best_full_height == 0 {
+        Some(Arc::new(crate::genesis::sigmachain_testnet_genesis_emission_box()))
+    } else {
+        None
+    };
     let intent = BuildIntent {
         expected_parent: now.best_full_id,
         expected_height: now.best_full_height,
@@ -273,6 +334,8 @@ pub(super) fn signal_mining_engine(
         miner_pk,
         eligible_rent_boxes: Arc::new(eligible_rent_boxes),
         reason,
+        sigmachain_bootstrap: is_sigmachain,
+        genesis_emission_box,
     };
     // `watch::send` replaces the prior value (latest-wins); Err only if the
     // engine task receiver is gone (benign during shutdown).
@@ -373,11 +436,13 @@ pub(super) fn handle_mining_request(
     //      `ergo-state/src/store/mod.rs` chain-state writes).
     //
     // Both `(a) && (b)` give the "applied tip == best-header tip"
-    // invariant `last_applied_chain_window_10` relies on.
+    // invariant `last_applied_chain_window_10` relies on. The
+    // SigmaChain bootstrap exception (height 0 with both ids zero is
+    // synced for mining purposes) is encoded in
+    // [`MiningTipSnapshot::synced`].
     let cs = state.store.chain_state_meta();
-    let synced = cs.best_header_height == cs.best_full_block_height
-        && cs.best_full_block_height > 0
-        && cs.best_header_id == cs.best_full_block_id;
+    let tip = MiningTipSnapshot::capture(state);
+    let synced = tip.synced();
     if !synced {
         let msg = format!(
             "node not synced to tip (best_header={}@{} best_full={}@{}); refusing to mine",
@@ -813,5 +878,58 @@ mod tests {
             DEBOUNCE,
         );
         assert_eq!(got, Some(BuildReason::WalletReady));
+    }
+
+    // ----- SigmaChain bootstrap synced-tip predicate (Phase 5.3b) -----
+
+    /// At zeroed genesis (height 0, both ids `[0; 32]`) SigmaChain
+    /// treats the chain as synced for mining purposes, but the
+    /// general Ergo path doesn't. Asserting both halves of the
+    /// invariant locally so a future refactor that drops the field
+    /// fails this test instead of the live-node bring-up.
+    #[test]
+    fn synced_at_genesis_only_for_sigmachain_bootstrap() {
+        let zeros = [0u8; 32];
+        let sigmachain = MiningTipSnapshot::for_test_sigmachain(zeros, 0, zeros, 0);
+        assert!(
+            sigmachain.synced(),
+            "SigmaChain zeroed genesis must read as synced for the mining gate"
+        );
+
+        let ergo = MiningTipSnapshot::for_test(zeros, 0, zeros, 0);
+        assert!(
+            !ergo.synced(),
+            "Ergo paths must still reject the zeroed genesis state — \
+             mainnet/testnet don't mine block 1"
+        );
+    }
+
+    /// The SigmaChain carve-out is keyed off the zero-id state; once
+    /// block 1 lands and the chain advances, the height > 0 branch
+    /// takes over and the carve-out has no effect on the predicate.
+    #[test]
+    fn synced_after_first_block_independent_of_bootstrap_flag() {
+        let h1_id = [0xABu8; 32];
+        let sigmachain_post_genesis =
+            MiningTipSnapshot::for_test_sigmachain(h1_id, 1, h1_id, 1);
+        assert!(sigmachain_post_genesis.synced());
+
+        let ergo_post_genesis = MiningTipSnapshot::for_test(h1_id, 1, h1_id, 1);
+        assert!(ergo_post_genesis.synced());
+    }
+
+    /// The SigmaChain carve-out cannot resurrect a header-ahead-of-body
+    /// state: even at height 0, if the ids disagree (e.g. a peer-pushed
+    /// header pulled best_header forward without us applying it), the
+    /// predicate must return false. Defensive — should be unreachable
+    /// on a real fresh boot but the gate's job is to be conservative.
+    #[test]
+    fn sigmachain_bootstrap_rejects_id_disagreement() {
+        let header_id = [0x11u8; 32];
+        let snap = MiningTipSnapshot::for_test_sigmachain([0u8; 32], 0, header_id, 0);
+        assert!(
+            !snap.synced(),
+            "id disagreement must not be masked by the SigmaChain genesis carve-out"
+        );
     }
 }

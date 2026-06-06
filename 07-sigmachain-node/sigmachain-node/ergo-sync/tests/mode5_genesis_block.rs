@@ -43,6 +43,7 @@ use ergo_state::chain::HeaderMeta;
 use ergo_state::store::StateStore;
 use ergo_state::test_helpers::derive_ad_proofs_over_boxes;
 use ergo_state::{DigestStateStore, HeaderSectionStore, StateBackendKind};
+use ergo_chain_spec::Network;
 use ergo_sync::block_proc::process_block;
 use ergo_validation::context::ProtocolParams;
 
@@ -379,7 +380,7 @@ fn mode5_process_block_genesis_advances_to_height_1() {
     let mut backend = StateBackendKind::Digest(store);
     let params = ProtocolParams::mainnet_default();
 
-    let processed = process_block(&mut backend, &fx.header_id, &params, None, None, None, None)
+    let processed = process_block(&mut backend, &fx.header_id, &params, Network::Mainnet, None, None, None, None)
         .expect("process_block must apply the genesis block");
     assert_eq!(processed.height, 1, "processed height must be 1");
 
@@ -446,7 +447,7 @@ fn mode5_process_block_genesis_rejects_tampered_state_root() {
     let mut backend = StateBackendKind::Digest(store);
     let params = ProtocolParams::mainnet_default();
 
-    let err = process_block(&mut backend, &fx.header_id, &params, None, None, None, None)
+    let err = process_block(&mut backend, &fx.header_id, &params, Network::Mainnet, None, None, None, None)
         .expect_err("a tampered genesis state_root must be rejected by the verifier");
     // The post-apply digest cross-check surfaces as a verifier/state error,
     // and the store must NOT have advanced.
@@ -479,11 +480,11 @@ fn mode5_process_block_genesis_on_non_fresh_tip_is_out_of_order() {
     // Apply block 1 once so the tip is at height 1.
     let mut backend = StateBackendKind::Digest(store);
     let params = ProtocolParams::mainnet_default();
-    process_block(&mut backend, &fx.header_id, &params, None, None, None, None)
+    process_block(&mut backend, &fx.header_id, &params, Network::Mainnet, None, None, None, None)
         .expect("first genesis apply must succeed");
 
     // Re-process block 1 against the now-height-1 tip.
-    let err = process_block(&mut backend, &fx.header_id, &params, None, None, None, None)
+    let err = process_block(&mut backend, &fx.header_id, &params, Network::Mainnet, None, None, None, None)
         .expect_err("replaying block 1 on a non-fresh tip must be rejected");
     assert!(
         matches!(

@@ -28,7 +28,7 @@ const HEIGHT_1_STATE_DIGEST: &str =
 
 #[derive(serde::Deserialize)]
 struct GenesisBoxJson {
-    #[serde(rename = "boxId")]
+    #[serde(rename = "boxId", default)]
     box_id: String,
     value: u64,
     #[serde(rename = "ergoTree")]
@@ -37,9 +37,18 @@ struct GenesisBoxJson {
     creation_height: u32,
     #[serde(rename = "additionalRegisters", default)]
     additional_registers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    assets: Vec<GenesisAssetJson>,
     #[serde(rename = "transactionId")]
     transaction_id: String,
     index: u16,
+}
+
+#[derive(serde::Deserialize)]
+struct GenesisAssetJson {
+    #[serde(rename = "tokenId")]
+    token_id: String,
+    amount: u64,
 }
 
 #[derive(serde::Deserialize)]
@@ -85,8 +94,19 @@ fn parse_genesis_box(json: &GenesisBoxJson) -> ErgoBox {
         registers: reg_vec.into_iter().map(|(_, rv)| rv).collect(),
     };
 
-    // Parse tokens (empty for genesis)
-    let tokens: Vec<Token> = Vec::new();
+    // Parse tokens. Mainnet's 3 genesis boxes carry none; SigmaChain's
+    // single emission box carries the singleton emission NFT.
+    let tokens: Vec<Token> = json
+        .assets
+        .iter()
+        .map(|a| {
+            let id_bytes: [u8; 32] = hex::decode(&a.token_id).unwrap().try_into().unwrap();
+            Token {
+                token_id: ergo_ser::token::TokenId::from_bytes(id_bytes),
+                amount: a.amount,
+            }
+        })
+        .collect();
 
     let candidate = ErgoBoxCandidate::new(
         json.value,
@@ -238,5 +258,57 @@ fn height_1_digest_after_block_1() {
         digest.as_bytes(),
         expected.as_slice(),
         "height 1 state digest mismatch — AVL+ tree algorithm is incorrect"
+    );
+}
+
+/// SigmaChain testnet genesis state digest. Computed deterministically
+/// from the single emission box at
+/// `test-vectors/sigmachain-testnet/genesis_boxes.json` by inserting
+/// `(box_id, serialize_ergo_box(box))` into a fresh `AvlTree` and
+/// reading `root_digest()`. The recomputation test below recomputes
+/// this from JSON on every run; the same value is pinned at
+/// `GenesisParams::sigmachain_testnet().state_digest` so a booting
+/// node validates its own genesis block against the right root.
+const SIGMACHAIN_TESTNET_GENESIS_STATE_DIGEST: &str =
+    "c479b14ec41618461449eabcb162265c0a5a322180a54b2baf7615c08ccf8de901";
+
+#[test]
+fn sigmachain_testnet_genesis_state_digest_reproducible() {
+    let data =
+        std::fs::read_to_string("../test-vectors/sigmachain-testnet/genesis_boxes.json").unwrap();
+    let boxes: Vec<GenesisBoxJson> = serde_json::from_str(&data).unwrap();
+    assert_eq!(boxes.len(), 1, "expected exactly 1 SigmaChain genesis box");
+
+    let mut tree = AvlTree::new();
+    for json_box in &boxes {
+        let ergo_box = parse_genesis_box(json_box);
+        let box_id = ergo_box.box_id().unwrap();
+        let serialized = serialize_ergo_box(&ergo_box).unwrap();
+        tree.insert(*box_id.as_bytes(), serialized);
+    }
+    let computed = tree.root_digest();
+
+    let expected = hex::decode(SIGMACHAIN_TESTNET_GENESIS_STATE_DIGEST).unwrap();
+    assert_eq!(
+        computed.as_bytes(),
+        expected.as_slice(),
+        "SigmaChain testnet genesis digest drift: recomputation from JSON \
+         disagrees with the pinned constant. If the JSON intentionally \
+         changed, update SIGMACHAIN_TESTNET_GENESIS_STATE_DIGEST and \
+         GenesisParams::sigmachain_testnet().state_digest in lockstep."
+    );
+}
+
+#[test]
+fn sigmachain_testnet_genesis_digest_matches_chain_spec_pin() {
+    use ergo_chain_spec::GenesisParams;
+
+    let pinned = GenesisParams::sigmachain_testnet().state_digest;
+    let local_constant = hex::decode(SIGMACHAIN_TESTNET_GENESIS_STATE_DIGEST).unwrap();
+    assert_eq!(
+        &pinned[..],
+        local_constant.as_slice(),
+        "GenesisParams::sigmachain_testnet().state_digest disagrees with \
+         the recomputation pin. Both must be updated together."
     );
 }

@@ -1521,3 +1521,32 @@ fn node_section_unknown_field_rejected() {
         "error: {err}"
     );
 }
+
+#[test]
+fn validate_supported_permits_sigmachain_testnet_without_header_id() {
+    // Phase 5.3 bootstrap: a fresh SigmaChain testnet has no height-1
+    // header until block 1 is mined. GenesisParams::sigmachain_testnet()
+    // now pins the post-Phase-5.3 canonical block 1 id, but the
+    // validate_supported carve-out remains as a defensive escape hatch
+    // for dev workflows that intentionally unpin while iterating;
+    // assert that an explicit `header_id = None` still passes the
+    // gate on SigmaChain. Ergo paths still require the pin —
+    // covered by the sibling test below.
+    let mut spec = ergo_chain_spec::ChainSpec::sigmachain_testnet();
+    spec.genesis.header_id = None;
+    validate_supported(&spec).expect(
+        "SigmaChain with header_id explicitly unpinned must still pass validate_supported",
+    );
+}
+
+#[test]
+fn validate_supported_still_rejects_ergo_paths_without_header_id() {
+    // The carve-out above is keyed off Network::SigmaChainTestnet
+    // specifically. Mainnet / Testnet with a missing header_id must
+    // still bail — there's no scenario where they should boot
+    // without the historic genesis pin.
+    let mut spec = ergo_chain_spec::ChainSpec::mainnet();
+    spec.genesis.header_id = None;
+    let err = validate_supported(&spec).expect_err("mainnet without header_id must reject");
+    assert!(err.contains("header_id"), "error: {err}");
+}

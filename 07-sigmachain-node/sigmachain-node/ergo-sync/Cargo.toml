@@ -11,6 +11,7 @@ publish    = false
 ergo-primitives = { workspace = true }
 ergo-ser        = { workspace = true }
 ergo-crypto     = { workspace = true }
+ergo-chain-spec = { workspace = true }
 ergo-validation = { workspace = true }
 ergo-state      = { workspace = true }
 ergo-p2p        = { workspace = true }
@@ -24,7 +25,6 @@ tracing         = { workspace = true }
 ergo-state      = { workspace = true, features = ["test-helpers"] }
 ergo-p2p        = { workspace = true, features = ["test-helpers"] }
 ergo-validation = { workspace = true, features = ["test-helpers"] }
-ergo-chain-spec = { workspace = true }
 hex        = { workspace = true }
 num-bigint = { workspace = true }
 serde      = { workspace = true, features = ["derive"] }

@@ -11,6 +11,14 @@
 /ergo-data.backup-*/
 /ergo-node.log
 /ergo-node.log.*
+
+# SigmaChain testnet runtime state (Phase 5+). Same shape as ergo-data
+# but rooted under sigmachain-data per ergo-node/sigmachain-testnet.toml.
+/sigmachain-data/
+/sigmachain-data-*/
+/sigmachain-node.log
+/sigmachain-node.log.*
+
 /.serena/
 /.claude/scheduled_tasks.lock
 

@@ -32,6 +32,7 @@ use crate::error::MiningError;
 use crate::reemission::ReemissionSettings;
 use crate::solution::{verify_solution, SolutionOutcome};
 use crate::work_message::{MinerSolution, WorkMessage};
+use ergo_chain_spec::YoloEmissionParams;
 
 /// Upper bound on templates retained in the [`MiningCache`] ring — the number
 /// of recently-published templates whose in-flight solutions can still be
@@ -82,6 +83,25 @@ struct MiningCache {
     best_tip: BestTip,
 }
 
+/// SigmaChain YOLO emission context: the per-block curve params plus
+/// the canonical treasury / LP accumulation script byte buffers.
+/// Held by [`MiningHandle`] when the active chain spec sets
+/// `emission_curve = Yolo(...)`, and threaded into the candidate
+/// builder so it can dispatch to `build_yolo_emission_tx` instead of
+/// the Ergo emission tx. The two script buffers are the same bytes
+/// produced by `ergo_chain_spec::yolo_genesis_scripts::*_bytes()`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YoloEmissionContext {
+    /// Per-block reward curve + split shares (treasury, LP).
+    pub params: YoloEmissionParams,
+    /// `treasury_accumulation.es` compiled ergo-tree bytes — guarded
+    /// by emission.es line 102 (`blake2b256(propBytes) == R4`).
+    pub treasury_script_bytes: Vec<u8>,
+    /// `lp_accumulation.es` compiled ergo-tree bytes — guarded by
+    /// emission.es line 108 (`blake2b256(propBytes) == R5`).
+    pub lp_script_bytes: Vec<u8>,
+}
+
 /// API-task-facing mining entry point. Cheap to clone (`Arc` wrappers
 /// internally) so the axum routing layer can capture per-handler.
 #[derive(Clone)]
@@ -110,6 +130,14 @@ pub struct MiningHandle {
     claim_storage_rent: bool,
     /// Max rent boxes per block's self-claim (see `with_rent_config`).
     max_storage_rent_claims: u32,
+    /// `Some` on SigmaChain (the active chain spec sets
+    /// `emission_curve = Yolo(...)`). Carries the YOLO per-block
+    /// curve params plus the canonical treasury / LP script bytes
+    /// the candidate builder hands to `build_yolo_emission_tx`.
+    /// `None` on Ergo paths — the existing
+    /// `build_pre_eip27_emission_tx` / `build_post_eip27_emission_tx`
+    /// dispatch fires instead.
+    yolo_context: Option<Arc<YoloEmissionContext>>,
 }
 
 impl MiningHandle {
@@ -147,7 +175,22 @@ impl MiningHandle {
             chain_config: Arc::new(chain_config),
             claim_storage_rent: false,
             max_storage_rent_claims: 0,
+            yolo_context: None,
         }
+    }
+
+    /// Builder-style: attach the SigmaChain YOLO emission context so
+    /// the candidate builder dispatches to `build_yolo_emission_tx`.
+    /// Off by default (Ergo paths leave it `None`); the node-boot path
+    /// calls this when `chain_spec.emission_curve` is `Yolo`.
+    pub fn with_yolo_context(mut self, ctx: YoloEmissionContext) -> Self {
+        self.yolo_context = Some(Arc::new(ctx));
+        self
+    }
+
+    /// SigmaChain YOLO emission context, or `None` on Ergo paths.
+    pub fn yolo_context(&self) -> Option<&YoloEmissionContext> {
+        self.yolo_context.as_deref()
     }
 
     /// Enable (or disable) storage-rent self-claiming and set the per-block

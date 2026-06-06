@@ -87,6 +87,21 @@ pub struct BuildIntent {
     /// already capped), or empty when rent self-claim is disabled.
     pub eligible_rent_boxes: Arc<Vec<ErgoBox>>,
     pub reason: BuildReason,
+    /// SigmaChain bootstrap discriminator: when `true` the engine's
+    /// synced gate accepts `expected_height == 0` (height-0 / zeroed
+    /// genesis is the unambiguous fresh-chain state, and the very
+    /// first candidate must be built without a prior block). Ergo
+    /// paths set this `false`; their genesis blocks are historic and
+    /// the engine should never build at height 0.
+    pub sigmachain_bootstrap: bool,
+    /// Genesis emission box, populated when `sigmachain_bootstrap`
+    /// and we're building block 1. At genesis the candidate builder
+    /// cannot lookup the prior-block emission box (no prior block);
+    /// the action loop parses it from `chain_spec.genesis.boxes_json`
+    /// at boot and passes it through every intent until block 1 lands.
+    /// `Some` is required when `sigmachain_bootstrap == true` and
+    /// `expected_height == 0`; otherwise `None`.
+    pub genesis_emission_box: Option<Arc<ErgoBox>>,
 }
 
 /// Identity + versioning stamped onto every published template. The serve path
@@ -209,7 +224,25 @@ pub fn build_and_publish(
 
     // Synced gate (full live predicate), evaluated within this committed
     // view: never build while the header tip leads the full tip.
-    if !snapshot.synced() {
+    //
+    // SigmaChain bootstrap: at height 0 with both ids zero the chain
+    // is unambiguously synced (no fork exists). The general
+    // `CommittedSnapshot::synced` predicate keeps its `height > 0`
+    // clause for Ergo-path safety; the engine widens it here when the
+    // intent carries `sigmachain_bootstrap = true`.
+    let engine_synced = if snapshot.synced() {
+        true
+    } else if intent.sigmachain_bootstrap
+        && snapshot.best_full_block_height() == 0
+        && snapshot.best_header_height() == 0
+        && snapshot.best_full_block_id() == [0u8; 32]
+        && snapshot.best_header_id() == [0u8; 32]
+    {
+        true
+    } else {
+        false
+    };
+    if !engine_synced {
         return Ok(BuildOutcome::NotSynced);
     }
 
@@ -221,6 +254,8 @@ pub fn build_and_publish(
         handle.reemission_ref(),
         handle.chain_config(),
         intent.eligible_rent_boxes.as_slice(),
+        intent.genesis_emission_box.as_deref(),
+        handle.yolo_context(),
     )?;
     let Some((candidate, work)) = built else {
         return Ok(BuildOutcome::Raced);
@@ -277,6 +312,8 @@ mod tests {
             miner_pk: [0x02u8; 33],
             eligible_rent_boxes: Arc::new(Vec::new()),
             reason: BuildReason::Startup,
+            sigmachain_bootstrap: false,
+            genesis_emission_box: None,
         }
     }
 

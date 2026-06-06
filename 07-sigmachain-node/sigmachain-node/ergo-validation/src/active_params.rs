@@ -194,8 +194,19 @@ pub fn scala_launch_testnet() -> ActiveProtocolParameters {
 /// Scala launch (block-version, parameters table, validation rules
 /// all inherit from upstream). Phase 3.2/3.3 may diverge — block
 /// version and per-block reward parameters in particular.
+///
+/// `block_version` is overridden to `INTERPRETER_60_VERSION = 4`:
+/// SigmaChain launches at v6.0 Sigma ops + Autolykos v2 directly,
+/// without the Ergo v1 → v2 transition (see
+/// `DifficultyParams::sigmachain_testnet().v2_activation = None`).
+/// A v1 launch row produces a candidate header whose serialized
+/// solution shape (v1 = pk + w + nonce + d) disagrees with the v2
+/// solution the builder always emits, and the post-submit re-parse
+/// fails with `UnexpectedEnd`.
 pub fn scala_launch_sigmachain_testnet() -> ActiveProtocolParameters {
-    scala_launch_mainnet()
+    let mut p = scala_launch_mainnet();
+    p.block_version = ergo_ser::header::INTERPRETER_60_VERSION;
+    p
 }
 
 /// Launch parameters for the given network. Production callers that
