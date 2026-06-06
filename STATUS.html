@@ -343,15 +343,17 @@
 </div>
 
 <div class="phase">
-  <h3>Contract sketches — relay + lock + mint (compile-verified) <span class="phase-status badge done">Done</span></h3>
-  <p>Three symmetric bridge contracts drafted and compiled via Ergo node 6.1.2 <code>/script/p2sAddress</code> (treeVersion=3). Same template deploys on either chain thanks to header-format symmetry:</p>
+  <h3>Contract sketches — full surface, compile + parse verified <span class="phase-status badge done">Done</span></h3>
+  <p>Five symmetric bridge contracts drafted and compiled via Ergo node 6.1.2 <code>/script/p2sAddress</code> (treeVersion=3). Same template deploys on either chain thanks to header-format symmetry. All parse cleanly through YOLO's Rust <code>ergo-ser</code>:</p>
   <table>
     <tr><th>Contract</th><th>Bytes</th><th>Role</th></tr>
-    <tr><td><code>relay-sketch.es</code></td><td>454 B</td><td>SPV-relay-as-contract; holds AVL header tree + cumulative-work tip; verifies foreign headers via <code>header.checkPow</code></td></tr>
-    <tr><td><code>lock-sketch.es</code></td><td>350 B</td><td>Holds native asset; releases on proof of foreign-chain burn via <code>header.stateRoot</code> AVL+ membership</td></tr>
-    <tr><td><code>mint-sketch.es</code></td><td>517 B</td><td>Holds wrapped supply; releases wrapped tokens on proof of foreign-chain lock</td></tr>
+    <tr><td><code>relay-sketch.es</code></td><td>454 B</td><td>SPV-relay-as-contract; AVL header tree + cum-work tip; verifies foreign headers via <code>header.checkPow</code></td></tr>
+    <tr><td><code>lock-sketch.es</code></td><td>326 B</td><td>Holds native asset; releases on proof of foreign-chain burn via <code>header.stateRoot</code> AVL+ membership</td></tr>
+    <tr><td><code>mint-sketch.es</code></td><td>475 B</td><td>Holds wrapped supply; releases wrapped tokens on proof of foreign-chain lock</td></tr>
+    <tr><td><code>burn-sketch.es</code></td><td>7 B</td><td><code>sigmaProp(false)</code> — unspendable receipt; R4/R5/R6 carry destination + amount + height; storage rent eventually reclaims</td></tr>
+    <tr><td><code>dsp-sketch.es</code></td><td>153 B</td><td>Append-only AVL set of consumed foreign-chain ids; double-spend prevention enforced by <code>AvlTree.insert</code> rejecting duplicate keys</td></tr>
   </table>
-  <p style="font-size: 13px; color: var(--muted);">Total bridge surface ≈ 1.3 KB ErgoTree. Flow diagram with per-step actor breakdown in <code>peg-flow.html</code>. Two known semantic bugs in <code>lock-sketch.es</code> (wrong R4 comparison direction + missing unlock-output destination check) are noted in the commit body and left for the next iteration.</p>
+  <p style="font-size: 13px; color: var(--muted);">Total bridge surface ≈ 1.4 KB ErgoTree. Flow diagram with per-step actor breakdown in <code>peg-flow.html</code>. <strong>v2 update (2026-06-05):</strong> the two known lock-side semantic bugs (wrong R4 comparison + missing unlock-output destination check) are fixed, plus a third bug found during this pass (DSP was wired as <code>dataInputs</code> instead of <code>INPUTS</code>, so the "updated" DSP output was never bound to consuming the prior state — fix is to spend + recreate). 6/6 parse tests pass.</p>
 </div>
 
 <div class="phase">
@@ -368,11 +370,10 @@
 <div class="phase">
   <h3>What's NOT done yet (deferred) <span class="phase-status badge todo">Bridge buildout</span></h3>
   <ul>
-    <li><strong>Lock-side semantic bugs:</strong> wrong R4 comparison + missing unlock-output destination check. Mechanical fixes, &lt;5 min each, but require re-compile and re-test.</li>
-    <li><strong>BurnReceipt + DoubleSpendPrevention contracts:</strong> referenced by lock/mint sketches but not yet drafted. Both are trivial — Burn is essentially <code>sigmaProp(false)</code> with intent registers; DSP is in the ross-weir reference repo nearly verbatim.</li>
     <li><strong>Runtime evaluation testing:</strong> compile + parse verified; <code>prove</code>/<code>verify</code> against real header fixtures is the next gate. Needs a tx-level test in the <code>01-emission-tests</code>-style harness.</li>
     <li><strong>Off-chain tx builder:</strong> bulk of actual bridge engineering. Constructs lock/mint/burn/unlock transactions, fetches relay state, computes AVL+ proofs from foreign UTXO state.</li>
     <li><strong>Bridge-the-bounty economics:</strong> relayer incentive scheme (carve a tiny fraction of YOLO emission or use a dedicated bridge-reward token) — design discussed, not implemented.</li>
+    <li><strong>Refund path:</strong> if a Lock box is created but the foreign-chain Mint never happens, the locked funds are stranded. Not addressed in v2 sketches.</li>
   </ul>
 </div>
 
@@ -449,6 +450,8 @@
 <h2>Commit Trail (sigmachain-node-fork branch)</h2>
 <table>
   <tr><th>Commit</th><th>Phase</th></tr>
+  <tr><td><code>baeaa29</code></td><td>Bridge sketches v2: BurnReceipt + DSP + lock/mint bug fixes</td></tr>
+  <tr><td><code>662054f</code></td><td>STATUS: trustless peg spike + arkadianet PR #13</td></tr>
   <tr><td><code>789feda</code></td><td>Bridge research: trustless YOLO↔Ergo peg sketches</td></tr>
   <tr><td><code>b45a405</code></td><td>Fix: drop v6 method-call tree-version gate (arkadianet PR #13)</td></tr>
   <tr><td><code>43372b0</code></td><td>Phase 4.5: SigmaChain miner-only storage rent rule</td></tr>
