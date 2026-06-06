@@ -658,16 +658,27 @@ impl GenesisParams {
     /// sigmachain_testnet_genesis_state_digest_reproducible` — any
     /// drift between the embedded JSON and this constant fails CI.
     ///
-    /// `header_id` stays `None` until the first block is mined on a
-    /// live SigmaChain testnet; the NiPoPoW verifier therefore runs in
-    /// open-genesis mode for now (same as Ergo testnet during
-    /// bootstrap).
+    /// `header_id` is the 32-byte blake2b256 of the canonical block 1
+    /// header — pinned in Phase 5.3 after the SigmaChain testnet
+    /// was bootstrapped end-to-end (genesis JSON -> mined block 1
+    /// over the running node -> /info reports this id as
+    /// `genesisBlockId`). The recipe is NOT byte-deterministic from
+    /// chain-spec alone (the header carries a wall-clock
+    /// `timestamp`), so this constant is the single canonical
+    /// `block 1` for SigmaChain testnet — operators bootstrapping a
+    /// fresh data dir produce a different `header_id` locally and
+    /// are on a divergent chain by definition. The Phase 5.3a
+    /// `validate_supported` carve-out (accept `header_id = None` on
+    /// SigmaChain) stays in place as a defensive escape hatch for
+    /// dev workflows that intentionally unpin while iterating.
     pub fn sigmachain_testnet() -> Self {
         Self {
             state_digest: parse_digest33_hex(
                 "c479b14ec41618461449eabcb162265c0a5a322180a54b2baf7615c08ccf8de901",
             ),
-            header_id: None,
+            header_id: Some(parse_bytes32_hex(
+                "0d411478999f51475d600a5131b331cd2d4efb1105fd7b17e32c7bfbce90fa84",
+            )),
             boxes_json: Some(include_str!(
                 "../../test-vectors/sigmachain-testnet/genesis_boxes.json"
             )),
@@ -1293,10 +1304,13 @@ mod tests {
     #[test]
     fn sigmachain_testnet_genesis_embeds_emission_box_json() {
         // Phase 4.3: genesis_boxes.json is embedded.
-        // Phase 5.2: state_digest is now the deterministic AVL+ root
-        //   over the single emission box (reproducibility test lives in
-        //   ergo-state/tests/genesis_digest.rs); header_id stays None
-        //   until the first block is mined.
+        // Phase 5.2: state_digest is the deterministic AVL+ root over the
+        //   single emission box (reproducibility test lives in
+        //   ergo-state/tests/genesis_digest.rs).
+        // Phase 5.3-cleanup: header_id is now pinned (block 1 mined
+        //   end-to-end via the YOLO emission path; the resulting
+        //   blake2b256 is captured here as the single canonical
+        //   block 1 id for SigmaChain testnet).
         let g = GenesisParams::sigmachain_testnet();
         assert_eq!(
             g.state_digest,
@@ -1304,7 +1318,12 @@ mod tests {
                 "c479b14ec41618461449eabcb162265c0a5a322180a54b2baf7615c08ccf8de901"
             )
         );
-        assert!(g.header_id.is_none());
+        assert_eq!(
+            g.header_id,
+            Some(parse_bytes32_hex(
+                "0d411478999f51475d600a5131b331cd2d4efb1105fd7b17e32c7bfbce90fa84"
+            ))
+        );
         let boxes = g
             .boxes_json
             .expect("sigmachain testnet embeds genesis_boxes.json");

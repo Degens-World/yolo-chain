@@ -879,4 +879,57 @@ mod tests {
         );
         assert_eq!(got, Some(BuildReason::WalletReady));
     }
+
+    // ----- SigmaChain bootstrap synced-tip predicate (Phase 5.3b) -----
+
+    /// At zeroed genesis (height 0, both ids `[0; 32]`) SigmaChain
+    /// treats the chain as synced for mining purposes, but the
+    /// general Ergo path doesn't. Asserting both halves of the
+    /// invariant locally so a future refactor that drops the field
+    /// fails this test instead of the live-node bring-up.
+    #[test]
+    fn synced_at_genesis_only_for_sigmachain_bootstrap() {
+        let zeros = [0u8; 32];
+        let sigmachain = MiningTipSnapshot::for_test_sigmachain(zeros, 0, zeros, 0);
+        assert!(
+            sigmachain.synced(),
+            "SigmaChain zeroed genesis must read as synced for the mining gate"
+        );
+
+        let ergo = MiningTipSnapshot::for_test(zeros, 0, zeros, 0);
+        assert!(
+            !ergo.synced(),
+            "Ergo paths must still reject the zeroed genesis state — \
+             mainnet/testnet don't mine block 1"
+        );
+    }
+
+    /// The SigmaChain carve-out is keyed off the zero-id state; once
+    /// block 1 lands and the chain advances, the height > 0 branch
+    /// takes over and the carve-out has no effect on the predicate.
+    #[test]
+    fn synced_after_first_block_independent_of_bootstrap_flag() {
+        let h1_id = [0xABu8; 32];
+        let sigmachain_post_genesis =
+            MiningTipSnapshot::for_test_sigmachain(h1_id, 1, h1_id, 1);
+        assert!(sigmachain_post_genesis.synced());
+
+        let ergo_post_genesis = MiningTipSnapshot::for_test(h1_id, 1, h1_id, 1);
+        assert!(ergo_post_genesis.synced());
+    }
+
+    /// The SigmaChain carve-out cannot resurrect a header-ahead-of-body
+    /// state: even at height 0, if the ids disagree (e.g. a peer-pushed
+    /// header pulled best_header forward without us applying it), the
+    /// predicate must return false. Defensive — should be unreachable
+    /// on a real fresh boot but the gate's job is to be conservative.
+    #[test]
+    fn sigmachain_bootstrap_rejects_id_disagreement() {
+        let header_id = [0x11u8; 32];
+        let snap = MiningTipSnapshot::for_test_sigmachain([0u8; 32], 0, header_id, 0);
+        assert!(
+            !snap.synced(),
+            "id disagreement must not be masked by the SigmaChain genesis carve-out"
+        );
+    }
 }
