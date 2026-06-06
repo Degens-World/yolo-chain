@@ -48,9 +48,14 @@ enabled = true                     # /blockchain/* extra-index. Required by
                                    # claims off the unspent-by-height table.
 
 [mining]
-enabled = false                    # external-miner API. Flip to `true` and set
-                                   # `miner_public_key_hex` once a YOLO miner
-                                   # wallet is generated.
+enabled = true                     # external-miner API. POST /mining/candidate +
+                                   # POST /mining/solution. The bundled CPU miner
+                                   # at ergo-mining/examples/sigmachain_cpu_miner.rs
+                                   # drives this loop at testnet difficulty.
+# Compressed secp256k1 pubkey (33 bytes / 66 hex chars; first byte 0x02 or 0x03)
+# of the address that owns OUTPUTS[3] of every coinbase emission tx.
+miner_public_key_hex = "03c95c7b3f2760adab4089ddf3d59fba152e94f7c0aa94463a5194e9bc3b4336d6"
+use_external_miner = true          # mandatory in v1; no in-process CPU miner.
 
 [logging]
 default_level = "info"

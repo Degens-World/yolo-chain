@@ -329,6 +329,14 @@ impl SyncExecutor {
         self.network = network;
     }
 
+    /// Read the active network. Used by subsystems that need to gate
+    /// behavior on network identity without holding the full
+    /// `ChainSpec` — e.g. the mining dispatcher's synced-tip gate
+    /// permits height-0 mining only on SigmaChain bootstrap.
+    pub fn network(&self) -> Network {
+        self.network
+    }
+
     /// Whether `recover_coordinator` has run to completion (actually walked
     /// the header chain, not just bailed on the near-tip gate).
     pub fn recovery_done(&self) -> bool {
