@@ -186,32 +186,24 @@
 <header>
   <h1><span class="accent">$YOLO</span> Chain — Project Status</h1>
   <div class="subtitle">A GPU-mineable blockchain with full DeFi and on-chain governance from genesis</div>
-  <div class="meta">Updated 2026-06-04 · Branch: main · Repo: github.com/Degens-World/yolo-chain</div>
+  <div class="meta">Updated 2026-06-05 (later) · Branch: <code>sigmachain-node-fork</code> · Repo: github.com/Degens-World/yolo-chain</div>
 </header>
 
 <div class="lead">
-  <strong>BREAKING — 2026-06-02:</strong> arkadianet/ergo v0.3.0 dropped — a from-scratch Rust implementation of an Ergo full node. Reached mainnet sync to tip at height 1,771,976 on 2026-04-26. Supports external miner protocol, full archive mode, HD wallet, dual-licensed MIT/Apache. <strong>This is the critical path unblock.</strong> The Rust node we've been waiting for now exists.
+  <strong>SigmaChain fork — Phase 4 complete (2026-06-05).</strong> The Rust node is forked, the YOLO emission curve is implemented, the genesis emission box is built (with the canonical compiled ErgoTree bytes for <code>emission.es</code>, <code>treasury_accumulation.es</code>, and <code>lp_accumulation.es</code> baked in), the 4-output YOLO coinbase tx builder is wired, and the miner-only storage rent consensus rule is enforced at block validation. <strong>3,832 tests pass across the full workspace, 0 failed.</strong>
+</div>
+
+<div class="lead" style="border-left-color: var(--blue);">
+  <strong>Architecture spike — trustless YOLO ↔ Ergo peg (2026-06-05).</strong> Verified Sigma 6.0 + Autolykos2 + header-format symmetry between YOLO Rust node and Ergo. Drafted three symmetric bridge contracts (relay, lock, mint) — all compile via Ergo node 6.1.2 and parse cleanly through YOLO's Rust <code>ergo-sigma</code> after fixing one upstream bug. Bug fix submitted to arkadianet/ergo as <a href="https://github.com/arkadianet/ergo/pull/13">PR #13</a>. Bridge is now buildable on current YOLO; eval + off-chain tooling deferred to a later phase. Phase 5 (testnet boot) remains the chain-side critical path.
 </div>
 
 <div class="lead">
-  <strong>Current state:</strong> All on-chain contracts complete, tested, and audited. Monetary system, treasury/LP governance, storage rent, and YoloDAO governance system are production-ready. <strong>Rust node now exists (alpha)</strong> — forking it for SigmaChain is the next move.
+  <strong>Where the fork lives:</strong> <code>07-sigmachain-node/sigmachain-node/</code> inside this repo, on the <code>sigmachain-node-fork</code> branch. Forked from <a href="https://github.com/arkadianet/ergo">arkadianet/ergo</a> at HEAD <code>1a68cd9</code> (4 commits past v0.3.0); upstream-merge instructions in <code>07-sigmachain-node/UPSTREAM.md</code>.
 </div>
 
 <div class="grid">
   <div class="stat">
-    <div class="num">7</div>
-    <div class="label">Governance Contracts</div>
-  </div>
-  <div class="stat">
-    <div class="num">60</div>
-    <div class="label">Tests Passing</div>
-  </div>
-  <div class="stat">
-    <div class="num">8.5–9</div>
-    <div class="label">Audit Range (out of 10)</div>
-  </div>
-  <div class="stat">
-    <div class="num">177M</div>
+    <div class="num">176.5M</div>
     <div class="label">Total YOLO Supply (coins)</div>
   </div>
   <div class="stat">
@@ -222,18 +214,178 @@
     <div class="num">85/10/5</div>
     <div class="label">Miner / Treasury / LP Split</div>
   </div>
+  <div class="stat">
+    <div class="num">5</div>
+    <div class="label">Halvings, then 1-coin tail</div>
+  </div>
+  <div class="stat">
+    <div class="num">3,832</div>
+    <div class="label">Workspace Tests Passing</div>
+  </div>
+  <div class="stat">
+    <div class="num">7</div>
+    <div class="label">Governance Contracts</div>
+  </div>
 </div>
 
-<h2>Completed Workstreams</h2>
+<h2>SigmaChain Fork — Phase Progress</h2>
+
+<div class="phase">
+  <h3>Phase 0 — Validate upstream <span class="phase-status badge done">Done</span></h3>
+  <p>Cloned <code>arkadianet/ergo</code> reference, confirmed clean build on Rust 1.95.0 with <code>cargo build --release -p ergo-node -p ergo-wallet</code> (exit 0). Toolchain auto-installs via the pinned <code>rust-toolchain.toml</code>.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 1 — Consensus parameter inventory <span class="phase-status badge done">Done</span></h3>
+  <p>Full per-parameter map of every divergence between Ergo and SigmaChain, with exact file:line references in the upstream. Lives at <code>overall-documents/sigmachain-parameter-inventory.md</code>.</p>
+  <p><strong>Key finding:</strong> <code>ergo-chain-spec/src/lib.rs</code> is the single source of truth for nearly every network parameter — magic bytes, address prefix, block interval, difficulty, voting, monetary curve, genesis. Adding <code>Network::SigmaChainTestnet</code> is most of the fork.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 2 — Repo layout + workspace metadata <span class="phase-status badge done">Done</span></h3>
+  <p>Vendored arkadianet/ergo into <code>07-sigmachain-node/sigmachain-node/</code> as flat files (inner <code>.git</code> removed; provenance in <code>UPSTREAM.md</code>). Workspace version 0.3.0 → 0.1.0, binary name <code>ergo-node</code> → <code>sigmachain-node</code> (crate name kept so upstream merges stay clean). NOTICE file documents dual MIT/Apache + SigmaChain copyright.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 3.1 — Network identity <span class="phase-status badge done">Done</span></h3>
+  <ul>
+    <li>Magic bytes: <code>[0x59, 0x4F, 0x4C, 0x4F]</code> — ASCII "YOLO" so a p2p capture instantly identifies the network. Distinct from Ergo mainnet <code>[1,0,2,4]</code> and testnet <code>[2,3,2,3]</code> — nodes drop each other's packets at the framing layer.</li>
+    <li>Address prefix: <code>0x20</code> — distinct from Ergo mainnet 0x00 and testnet 0x10 so wallets reject cross-network addresses at decode time.</li>
+    <li>New variants: <code>Network::SigmaChainTestnet</code>, <code>NetworkPrefix::SigmaChainTestnet</code>, parses from <code>"sigmachain-testnet"</code>.</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>Phase 3.2 — Block timing + voting epochs <span class="phase-status badge done">Done</span></h3>
+  <ul>
+    <li>Block interval: 20 s (per emission.es <code>blocksPerHalving = 1,577,880 ~1 year</code>).</li>
+    <li>Difficulty epoch: 6,144 blocks = 1024 × 120/20 → preserves Ergo mainnet's ~34 h wall-clock adjustment cadence.</li>
+    <li>Voting epoch: 6,144 blocks, aligned with the difficulty epoch (matches Ergo mainnet's 1024/1024 alignment).</li>
+    <li>Sync-tip freshness: 200 min (= 600 × 20 s), matching Ergo mainnet's window. No EIP-37, no v1 → v2 transition (launch at Interpreter60Version).</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>Phase 3.3 — Emission curve math layer <span class="phase-status badge done">Done</span></h3>
+  <p>New <code>YoloEmissionParams</code> + <code>EmissionCurve</code> enum on <code>ChainSpec</code>. The Ergo linear curve and YOLO geometric-halving curve coexist; the chain selects via <code>EmissionCurve::ErgoLinear</code> or <code>EmissionCurve::Yolo(...)</code>. Per-height helpers (<code>yolo_emission_at_height</code>, <code>yolo_miners_reward_at_height</code>, etc.) sit alongside Ergo's. Miner share computed as remainder so no nanoYOLO is lost to integer division across the three non-emission outputs.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 3.4 — Storage rent params <span class="phase-status badge done">Done</span></h3>
+  <ul>
+    <li><code>storage_period</code>: 1,577,880 blocks (1 year at 20 s) — down from Ergo's 1,051,200 (4 years at 120 s).</li>
+    <li><code>storage_fee_factor</code>: 312,500 nanoYOLO/byte/period — exactly 1/4 of Ergo's. Annualized per-byte cost is identical.</li>
+    <li><code>ProtocolParams::from_active_for_network</code>: network-aware variant so block-processing picks the right period per chain.</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>Phase 4.1 + 4.2 — Compile YOLO contracts &amp; embed bytes <span class="phase-status badge done">Done</span></h3>
+  <p>One-shot CLI <code>07-sigmachain-node/sigmachain-genesis-tool/</code>: reads <code>emission.es</code>, <code>treasury_accumulation.es</code>, <code>lp_accumulation.es</code>, runs each through <code>ergoscript_compiler::compile_canonical</code> against localhost:9053 (API key from <code>$API_KEY</code> env, never echoed), prints chain-spec hex constants and writes the genesis JSON. Dep pinned to <code>cannonQ/sigma-rust @ 7ea8dc7d</code> by rev for reproducibility.</p>
+  <table>
+    <tr><th>Contract</th><th>Bytes</th><th class="center">Rust compiler vs Scala node</th></tr>
+    <tr><td><code>emission.es</code></td><td>438 B</td><td class="center" style="color: var(--yellow)">USED NODE</td></tr>
+    <tr><td><code>treasury_accumulation.es</code></td><td>72 B</td><td class="center audit-9">LOCAL MATCH</td></tr>
+    <tr><td><code>lp_accumulation.es</code></td><td>72 B</td><td class="center audit-9">LOCAL MATCH</td></tr>
+  </table>
+  <p style="font-size: 13px; color: var(--muted); margin-top: 6px;">All three are byte-canonical against Scala — canonical mode swapped to the node's bytes on emission.es when the Rust compiler diverged. Bytes vendored into <code>ergo-chain-spec/src/yolo_genesis_scripts.rs</code> so the workspace builds offline.</p>
+</div>
+
+<div class="phase">
+  <h3>Emission .5-fix <span class="phase-status badge done">Done</span></h3>
+  <p>Caught during Phase 4.3 design: the original schedule (6 halvings) produced a fractional .5 YOLO in the total genesis supply because <code>1.5625 × 1,577,880 = 2,465,437.5</code> is non-integral (1,577,880 is divisible by 8 but not 16). Fix: drop the <code>halvings == 5</code> arm from <code>emission.es</code> — halvings collapse straight to the 1-coin tail floor at boundary 5.</p>
+  <p style="margin-top: 8px;"><strong>New total supply: 176,525,325 YOLO</strong> (clean integer; 887,558 less than the original 177,412,882.5 projection). 63/63 Python tests + 51 chain-spec tests pass after the fix.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 4.3 — Genesis emission box <span class="phase-status badge done">Done</span></h3>
+  <p>Single emission box at genesis:</p>
+  <ul>
+    <li>value = 176,525,325,000,000,000 nanoYOLO</li>
+    <li>ergoTree = canonical <code>emission.es</code> bytes</li>
+    <li><code>tokens[0]</code> = singleton emission NFT, id = <code>blake2b256("SigmaChain testnet emission NFT v1")</code> — deterministic so any verifier can recompute it</li>
+    <li>R4 = Coll[Byte] holding <code>blake2b256(treasury_accumulation.es bytes)</code></li>
+    <li>R5 = Coll[Byte] holding <code>blake2b256(lp_accumulation.es bytes)</code></li>
+  </ul>
+  <p>Treasury and LP accumulation boxes are NOT created at genesis — <code>emission.es</code> creates them fresh as <code>OUTPUTS(1)</code> / <code>OUTPUTS(2)</code> of every coinbase emission tx. Genesis state thus carries exactly one box.</p>
+  <p style="font-size: 13px; color: var(--muted);">JSON lives at <code>test-vectors/sigmachain-testnet/genesis_boxes.json</code>; both <code>ergo-chain-spec</code> and <code>ergo-node</code> <code>include_str!</code> it.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 4.4 — 4-output YOLO coinbase builder <span class="phase-status badge done">Done</span></h3>
+  <p><code>build_yolo_emission_tx</code> in <code>ergo-mining/src/coinbase.rs</code> alongside the existing <code>build_pre_eip27_emission_tx</code> (Ergo path untouched for byte-parity). 1 input / 4 outputs:</p>
+  <ul>
+    <li><code>OUTPUTS(0)</code> — new emission box, value = input − block_reward, with input's script + tokens + R4/R5 preserved</li>
+    <li><code>OUTPUTS(1)</code> — treasury accumulation box, value = block_reward × 10%</li>
+    <li><code>OUTPUTS(2)</code> — LP accumulation box, value = block_reward × 5%</li>
+    <li><code>OUTPUTS(3)</code> — miner reward box, value = block_reward − treasury − lp (≈ 85%, computed as remainder)</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>Phase 4.5 — Miner-only storage rent consensus rule <span class="phase-status badge done">Done</span></h3>
+  <p>New block-level rule: any non-coinbase tx that opts into the storage-rent path (empty proof + context-extension variable 127 on any input) causes the block to be rejected with <code>NonCoinbaseStorageRentClaim { tx_index, input_index }</code>.</p>
+  <p>Miners sweep rent inside the coinbase by appending rent-eligible inputs after the emission box and recreated outputs after the four positionally-constrained emission outputs. Gated by <code>BlockValidationContext::enforce_miner_only_storage_rent</code> — <code>false</code> on Ergo paths (byte-parity preserved), flipped <code>true</code> at the SigmaChain validation boundary.</p>
+</div>
+
+<h2>Trustless Peg — Architecture Spike (2026-06-05)</h2>
+
+<div class="phase">
+  <h3>Verification — design is feasible on shipped primitives <span class="phase-status badge done">Done</span></h3>
+  <p>Confirmed the cryptographic + protocol substrate needed for a trustless YOLO ↔ Ergo bridge is fully present in the current YOLO Rust node:</p>
+  <ul>
+    <li><strong>Sigma 6.0 / EIP-50 primitives are wired and active by default</strong> in <code>ergo-sigma</code>: <code>Header.checkPow</code>, <code>Global.powHit</code>, <code>Global.decodeNbits</code>, <code>Global.deserializeTo[T]</code> — implemented, cost-pinned, soft-fork-gated against <code>activated_script_version</code> (= 3 by default in <code>evaluator/types.rs</code>).</li>
+    <li><strong>Autolykos2 parameters are byte-identical to Ergo</strong> (k=32, NBase=2²⁶, INCREASE_START=600·1024, etc.) — verified against <code>ergo-crypto/src/autolykos/common.rs</code> and the ~9k mainnet headers in <code>ergo-crypto/tests/pow_mainnet.rs</code>.</li>
+    <li><strong>Header wire format is byte-identical to Ergo</strong> — <code>diff -q</code> against arkadianet v0.3.0 returned no output. <code>header.checkPow</code> on YOLO works on Ergo headers and vice versa without manual byte slicing.</li>
+    <li><strong>Cross-chain confusion impossible by construction</strong> — each relay box is anchored at the foreign chain's genesis block-id; mis-chain headers fail the parent-lookup AVL check.</li>
+  </ul>
+  <p style="font-size: 13px; color: var(--muted);">Memory saved to <code>memory/project_yolo_node_inheritance.md</code> so future sessions don't re-verify.</p>
+</div>
+
+<div class="phase">
+  <h3>Contract sketches — relay + lock + mint (compile-verified) <span class="phase-status badge done">Done</span></h3>
+  <p>Three symmetric bridge contracts drafted and compiled via Ergo node 6.1.2 <code>/script/p2sAddress</code> (treeVersion=3). Same template deploys on either chain thanks to header-format symmetry:</p>
+  <table>
+    <tr><th>Contract</th><th>Bytes</th><th>Role</th></tr>
+    <tr><td><code>relay-sketch.es</code></td><td>454 B</td><td>SPV-relay-as-contract; holds AVL header tree + cumulative-work tip; verifies foreign headers via <code>header.checkPow</code></td></tr>
+    <tr><td><code>lock-sketch.es</code></td><td>350 B</td><td>Holds native asset; releases on proof of foreign-chain burn via <code>header.stateRoot</code> AVL+ membership</td></tr>
+    <tr><td><code>mint-sketch.es</code></td><td>517 B</td><td>Holds wrapped supply; releases wrapped tokens on proof of foreign-chain lock</td></tr>
+  </table>
+  <p style="font-size: 13px; color: var(--muted);">Total bridge surface ≈ 1.3 KB ErgoTree. Flow diagram with per-step actor breakdown in <code>peg-flow.html</code>. Two known semantic bugs in <code>lock-sketch.es</code> (wrong R4 comparison direction + missing unlock-output destination check) are noted in the commit body and left for the next iteration.</p>
+</div>
+
+<div class="phase">
+  <h3>Upstream node fix — arkadianet/ergo PR #13 <span class="phase-status badge next">Open</span></h3>
+  <p>Found a real upstream bug while parse-testing the bridge sketches through YOLO's Rust <code>ergo-ser</code>: <code>method_explicit_type_args_count</code> gated v6 explicit-type-args reads on <code>tree_version &gt;= 3</code>, but the Scala 6.0 compiler emits v6 method calls inside v0-header trees (header byte <code>0x10</code>). The gate caused real 6.0-compiled trees to mis-align after MethodCall args — the trailing type-arg byte got mis-interpreted as the next expression's opcode (<code>0x68</code> = SHeader code → spurious "value deserialization not supported for SHeader").</p>
+  <p>Fix: type-arg count now governed purely by <code>(type_id, method_id)</code>. Soft-fork rejection of v6 methods on non-EIP-50 chains continues to happen at evaluation time. Two pre-existing tests that pinned the buggy gate behavior updated and renamed. <strong>314/314 ergo-ser tests pass on clean arkadianet HEAD + fix.</strong></p>
+  <ul>
+    <li>PR: <a href="https://github.com/arkadianet/ergo/pull/13">arkadianet/ergo #13</a> — from <code>Degens-World/ergo:fix/v6-method-typeargs-tree-version-gate</code></li>
+    <li>YOLO's local fork already has the fix on <code>sigmachain-node-fork</code> — unblocks bridge work immediately, doesn't need to wait for merge</li>
+    <li>YOLO-side regression test added at <code>ergo-sigma/tests/bridge_sketches_parse.rs</code> — flips green once PR merges + rebase happens</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <h3>What's NOT done yet (deferred) <span class="phase-status badge todo">Bridge buildout</span></h3>
+  <ul>
+    <li><strong>Lock-side semantic bugs:</strong> wrong R4 comparison + missing unlock-output destination check. Mechanical fixes, &lt;5 min each, but require re-compile and re-test.</li>
+    <li><strong>BurnReceipt + DoubleSpendPrevention contracts:</strong> referenced by lock/mint sketches but not yet drafted. Both are trivial — Burn is essentially <code>sigmaProp(false)</code> with intent registers; DSP is in the ross-weir reference repo nearly verbatim.</li>
+    <li><strong>Runtime evaluation testing:</strong> compile + parse verified; <code>prove</code>/<code>verify</code> against real header fixtures is the next gate. Needs a tx-level test in the <code>01-emission-tests</code>-style harness.</li>
+    <li><strong>Off-chain tx builder:</strong> bulk of actual bridge engineering. Constructs lock/mint/burn/unlock transactions, fetches relay state, computes AVL+ proofs from foreign UTXO state.</li>
+    <li><strong>Bridge-the-bounty economics:</strong> relayer incentive scheme (carve a tiny fraction of YOLO emission or use a dedicated bridge-reward token) — design discussed, not implemented.</li>
+  </ul>
+</div>
+
+<h2>On-Chain Contracts (built before the fork, immutable)</h2>
 
 <div class="phase">
   <h3>01 — Emission Contract <span class="phase-status badge done">Complete</span></h3>
-  <p>The contract that mints every coin. 50 coins/block, halving annually, 1-coin tail emission. Validates against the actual sigma-rust interpreter the chain will run on.</p>
+  <p>50 coins/block, halving annually for 5 halvings (50 → 25 → 12.5 → 6.25 → 3.125), then 1-coin tail forever. 85% miner / 10% treasury / 5% LP. Per-block totals are integral in nanoYOLO at every height.</p>
   <ul>
-    <li>62 Python semantic tests + 19 ErgoTree evaluation tests, all passing</li>
-    <li>Halving boundaries verified across 6 epochs + tail emission</li>
+    <li>63 Python semantic tests + ErgoTree evaluation tests, all passing</li>
+    <li>Halving boundaries verified across all 5 explicit halvings + tail emission</li>
     <li>Terminal path tested (NFT burn on exhaustion)</li>
-    <li>i64 overflow safety confirmed (52x headroom)</li>
+    <li>i64 overflow safety confirmed (52× headroom)</li>
   </ul>
 </div>
 
@@ -263,8 +415,8 @@
   <p>Economic simulation of the 12-month rent cycle at 312,500 nano/byte/year. 274-line model covering 560 parameter combinations.</p>
   <ul>
     <li>Annual cost matches Ergo (proven since July 2023)</li>
-    <li>4x faster cleanup cycle than Ergo (12mo vs 4yr)</li>
-    <li>Miner-only collection — no MEV bots front-running</li>
+    <li>4× faster cleanup cycle than Ergo (12mo vs 4yr)</li>
+    <li>Miner-only collection — no MEV bots front-running (now enforced at block validation, Phase 4.5)</li>
     <li>1-coin balance survives 12.8 years of total neglect</li>
     <li>7 sensitivity charts + plain-language holder impact guide</li>
   </ul>
@@ -273,11 +425,6 @@
 <div class="phase">
   <h3>05 — Integration Testing <span class="phase-status badge done">Complete</span></h3>
   <p>Full pipeline test: emission contract feeding treasury and LP fund accumulation contracts across multi-block sequences, including the first halving boundary.</p>
-  <ul>
-    <li>Genesis-to-emission verified</li>
-    <li>Halving transition (50 → 25 coins) tested</li>
-    <li>Multi-contract interaction confirmed</li>
-  </ul>
 </div>
 
 <div class="phase">
@@ -299,42 +446,51 @@
   <p style="margin-top: 14px;"><strong>Plus:</strong> Python voting bot (stateless, multi-bot safe), Python lifecycle model, complete documentation (HANDOFF.md, README.md, PARAMETERS.md, EDGE_CASES.md). All 60 tests run in &lt;1 second.</p>
 </div>
 
-<h2>Key Design Decisions Locked</h2>
+<h2>Commit Trail (sigmachain-node-fork branch)</h2>
 <table>
-  <tr><th>Decision</th><th>Choice</th></tr>
-  <tr><td>Treasury distribution</td><td>Proportion-based (X / 10,000,000) — inherently safe vs fixed-amount</td></tr>
-  <tr><td>Support thresholds</td><td>Tiered: 50% normal, 90% for &gt;10% of treasury</td></tr>
-  <tr><td>Governance migration</td><td>New-treasury-mode (90% super-majority transfers full treasury)</td></tr>
-  <tr><td>Initiation stake</td><td>100k vYOLO floor, forfeited to treasury on cancel</td></tr>
-  <tr><td>State tracking</td><td>Token-quantity pattern (1=pending, 2=passed)</td></tr>
-  <tr><td>Vote NFT lifecycle</td><td>Burned on counting consumption (nested forall)</td></tr>
-  <tr><td>Storage rent on vault/reserve</td><td>Active, no exemption — bot heartbeat resets clock; bounded drift &lt;0.4 coins/yr</td></tr>
-  <tr><td>i64 overflow protection</td><td>Split-math pattern in treasury.es proportion calculation</td></tr>
+  <tr><th>Commit</th><th>Phase</th></tr>
+  <tr><td><code>789feda</code></td><td>Bridge research: trustless YOLO↔Ergo peg sketches</td></tr>
+  <tr><td><code>b45a405</code></td><td>Fix: drop v6 method-call tree-version gate (arkadianet PR #13)</td></tr>
+  <tr><td><code>43372b0</code></td><td>Phase 4.5: SigmaChain miner-only storage rent rule</td></tr>
+  <tr><td><code>e2481dc</code></td><td>Phase 4.4: 4-output YOLO emission tx builder</td></tr>
+  <tr><td><code>d18c0fe</code></td><td>Phase 4.3: SigmaChain genesis emission box</td></tr>
+  <tr><td><code>fa1405c</code></td><td>Emission .5-fix: drop the halvings == 5 (1.5625 YOLO) arm</td></tr>
+  <tr><td><code>313e5f6</code></td><td>Phase 4.1-4.2: SigmaChain genesis ErgoTrees (compile + embed)</td></tr>
+  <tr><td><code>5c9e094</code></td><td>Phase 3.4: SigmaChain storage rent — 1-year cycle</td></tr>
+  <tr><td><code>89c02cf</code></td><td>Phase 3.3: SigmaChain emission curve (math layer)</td></tr>
+  <tr><td><code>46aa577</code></td><td>Phase 3.2: SigmaChain block timing + voting epochs</td></tr>
+  <tr><td><code>95b00d7</code></td><td>Phase 3.1: SigmaChain network identity</td></tr>
+  <tr><td><code>e93c345</code></td><td>Phase 2: Import arkadianet/ergo as sigmachain-node fork</td></tr>
+  <tr><td><code>f245929</code></td><td>Phase 1: SigmaChain consensus parameter inventory</td></tr>
+  <tr><td><code>2d8228d</code></td><td>main (branch point)</td></tr>
 </table>
 
 <h2>What's Next</h2>
 
 <div class="phase">
-  <h3>External — Node Fork <span class="phase-status badge next">UNBLOCKED — Node Exists</span></h3>
-  <p><strong>arkadianet/ergo v0.3.0</strong> (released 2026-06-02) is the Rust node we've been waiting for. From-scratch implementation, strict Scala consensus parity, mainnet sync confirmed.</p>
+  <h3>Phase 5 — Local testnet boot <span class="phase-status badge next">Next</span></h3>
+  <p>Spin up a single-node SigmaChain testnet, mine blocks, verify the genesis state digest. Then take the YoloDAO integration test from <code>06-governance/tests/integration_test.rs</code>, swap out the sigma-rust evaluator calls for real node-submitted transactions, run the full deposit → vote → execute → redeem lifecycle against the running node.</p>
   <ul>
-    <li><strong>Status:</strong> Pre-1.0 alpha. Not for funds custody yet, but functional and actively developed.</li>
-    <li><strong>Build:</strong> <code>cargo build --release -p ergo-node -p ergo-wallet</code> on Rust 1.95.0</li>
-    <li><strong>Modes supported:</strong> Full archive, UTXO snapshot bootstrap, pruned, digest verifier, headers-only, NiPoPoW</li>
-    <li><strong>Mining:</strong> External-miner REST protocol supported (requires utxo state mode)</li>
-    <li><strong>Sigma-rust:</strong> Used only as dev/test oracle — never linked into consensus path</li>
-    <li><strong>License:</strong> MIT or Apache 2.0 (dual)</li>
-    <li><strong>Next steps:</strong> (1) Test build locally (2) Sync against Ergo mainnet to validate (3) Scope fork — swap Autolykos2 → Ethash, change network magic, custom genesis box per YOLO emission spec, retune block time 120s → 20s</li>
+    <li>Config plumbing: make <code>Network::SigmaChainTestnet</code> selectable from <code>ergo-node.toml</code></li>
+    <li>Set <code>enforce_miner_only_storage_rent: true</code> at the SigmaChain block-validation boundary</li>
+    <li>Capture the AVL+ state digest from genesis state and pin it on <code>GenesisParams::sigmachain_testnet</code> (currently a zero placeholder)</li>
+    <li>Verify block production, halving boundary (jump to height 1,577,880), and the miner-only rent rule end-to-end on a real chain</li>
   </ul>
 </div>
 
 <div class="phase">
-  <h3>External — Bridge Integration <span class="phase-status badge next">Coordination</span></h3>
-  <p>AEther bridge already tested moving assets between Ergo mainnet and Cosmos/Ethereum testnets. Scoping conversations needed for SigmaChain integration so YOLO can reach Ethereum DEXes and Cosmos liquidity from early on.</p>
+  <h3>Phase 6 — Documentation + STATUS rollover <span class="phase-status badge todo">After Phase 5</span></h3>
+  <p>Write <code>sigmachain-node/README.md</code> (build/configure/run), <code>sigmachain-node/docs/genesis.md</code> (how the state was constructed), <code>sigmachain-node/docs/fork-from-arkadianet.md</code> (every divergence).</p>
 </div>
 
 <div class="phase">
-  <h3>Phase 4 — Governance Frontend <span class="phase-status badge todo">Ready to Build</span></h3>
+  <h3>External — Bridge Integration <span class="phase-status badge next">Coordination + own-stack drafted</span></h3>
+  <p><strong>AEther bridge:</strong> already tested moving assets between Ergo mainnet and Cosmos/Ethereum testnets. Scoping conversations needed for SigmaChain integration so YOLO can reach Ethereum DEXes and Cosmos liquidity from early on.</p>
+  <p><strong>Trustless YOLO ↔ Ergo (own stack):</strong> compile + parse verified end-to-end on YOLO's Rust evaluator (see spike section above). Real next moves are (1) fix two known lock-contract semantic bugs, (2) draft Burn + DoubleSpend contracts, (3) hook into rust harness for prove/verify against real header fixtures, (4) write off-chain tx builder.</p>
+</div>
+
+<div class="phase">
+  <h3>Governance Frontend <span class="phase-status badge todo">Ready to Build</span></h3>
   <p>React app, reuses Etcha V3 wizard patterns. Out of V1 scope but needed before mainnet.</p>
   <ul>
     <li>Lock/Redeem screen (vault interaction)</li>
@@ -346,13 +502,7 @@
 </div>
 
 <div class="phase">
-  <h3>Phase 5 — Testnet Deployment <span class="phase-status badge next">Achievable Now</span></h3>
-  <p>Strict ordering: mint state NFTs → mint reserve NFTs → mint vYOLO → compile contracts with real IDs → deploy 5 vault/reserve pairs → deploy counting + treasury (dormant) → start voting bot. Stress test concurrent deposits + bot restart recovery.</p>
-  <p style="margin-top: 10px; font-size: 14px; color: var(--muted);">Path: fork arkadianet/ergo → apply YOLO parameters → spin up local testnet → run genesis sequence → deploy contracts → verify the integration test against the real node.</p>
-</div>
-
-<div class="phase">
-  <h3>Phase 6 — Mainnet <span class="phase-status badge hold">Post-Testnet</span></h3>
+  <h3>Mainnet <span class="phase-status badge hold">Post-Testnet</span></h3>
   <p>Mainnet token IDs, mainnet wallet, multiple independent bot operators. Governance runs alongside multisig for observation period. Community votes to migrate treasury when confidence is established (90% threshold).</p>
 </div>
 
@@ -366,50 +516,36 @@
   <p>Document stratum protocol so miners connect existing GPU software without custom tools. Build mining profitability calculator with GPU-by-GPU estimates.</p>
 </div>
 
-<h2>Bonus: ErgoScript Rust Compiler</h2>
+<h2>ErgoScript Rust Compiler (cannonQ/sigma-rust)</h2>
 <div class="phase">
-  <h3>Status: 50% scaffolding, ~10% language coverage <span class="phase-status badge todo">Optional Win</span></h3>
-  <p>The <code>ergoscript-compiler</code> crate in sigma-rust is a partial implementation that compiles arithmetic expressions but stops there. Compiling real contracts requires a running Ergo node (the workaround we use throughout this project).</p>
-
-  <p><strong>What's working:</strong> Lexer (complete for current scope), Pratt parser, basic AST/HIR/MIR pipeline, full orchestration. The architecture is right.</p>
-
-  <p><strong>What's missing:</strong> Method calls, lambdas, blocks, if/else, boolean operators, type annotations, built-in functions. The parser stopped at the eldiro tutorial scope.</p>
-
-  <div class="progress-bar"><div class="progress-fill" style="width: 50%"></div></div>
-  <p style="font-size: 13px; color: var(--muted); margin-top: 0;">Estimated 8-12 Claude Code sessions to complete. Test acceptance criteria: all 7 YoloDAO contracts compile to byte-matching ErgoTree.</p>
-
-  <p style="margin-top: 14px;"><strong>Why bother:</strong> Offline contract development, browser/WASM compilation, CI without a node, dynamic contract generation, lower barrier to entry for non-Scala developers.</p>
-
-  <p>Documents: <code>overall-documents/ERGOSCRIPT-RUST-COMPILER-STATUS.md</code> (full analysis) and <code>ERGOSCRIPT-COMPILER-HANDOFF.md</code> (session-by-session plan).</p>
+  <h3>Status: production-ready, awaiting upstream PR <span class="phase-status badge done">Wired into SigmaChain build</span></h3>
+  <p>The <code>ergoscript-compiler</code> crate on the <code>workstream-f</code> branch is production-ready: 233/233 lib tests, 164/164 conformance tests, 45/46 legacy contracts byte-match Scala, 10/15 of the "sig-15" significant Ergo contracts byte-match locally, 97.8% match across 575 generated programs in the differential fuzzer.</p>
+  <p>Two compilation modes:</p>
+  <ul>
+    <li><code>compile(source, env)</code> — pure Rust, no network. 45/46 contracts byte-match Scala exactly.</li>
+    <li><code>compile_canonical(source, env, node_url, api_key)</code> — falls back to the Scala node when local bytes diverge, guaranteeing identical P2S addresses to the Scala toolchain.</li>
+  </ul>
+  <p><strong>Used by SigmaChain:</strong> <code>07-sigmachain-node/sigmachain-genesis-tool/</code> calls <code>compile_canonical</code> against localhost:9053 to produce the three canonical ErgoTree byte arrays baked into <code>ergo-chain-spec::yolo_genesis_scripts</code>. The runtime node has zero compiler dependency — compilation is build-time only.</p>
+  <p style="font-size: 13px; color: var(--muted);">PR #862 was closed 2026-05-26; smaller-PR resubmits + maintainer conversation in progress. The fork is at <code>github.com/cannonQ/sigma-rust</code>; SigmaChain pins rev <code>7ea8dc7d</code> for reproducibility.</p>
 </div>
 
 <h2>Repo Layout</h2>
 <table>
   <tr><th>Directory</th><th>Contents</th></tr>
-  <tr><td><code>01-emission-tests/</code></td><td>Emission contract + 81 tests + Python semantic model</td></tr>
+  <tr><td><code>01-emission-tests/</code></td><td>Emission contract + 63 Python tests + semantic model (.5-fixed)</td></tr>
   <tr><td><code>02-treasury-tests/</code></td><td>Treasury multisig governance + accumulation + 45 tests</td></tr>
   <tr><td><code>03-lp-fund-tests/</code></td><td>LP fund multisig + accumulation + tests</td></tr>
   <tr><td><code>04-storage-rent/</code></td><td>Economic model, 7 sensitivity charts, holder impact guide</td></tr>
   <tr><td><code>05-integration-tests/</code></td><td>Multi-contract pipeline tests</td></tr>
   <tr><td><code>06-governance/</code></td><td>YoloDAO: 7 contracts, 60 tests, voting bot, integration test</td></tr>
-  <tr><td><code>overall-documents/</code></td><td>Architecture docs, handoffs, fork plans, compiler status</td></tr>
+  <tr><td><code>07-sigmachain-node/sigmachain-node/</code></td><td>The forked Rust node (17 crates, 3,829 tests)</td></tr>
+  <tr><td><code>07-sigmachain-node/sigmachain-genesis-tool/</code></td><td>One-shot CLI that compiles YOLO contracts and emits genesis JSON + chain-spec hex</td></tr>
+  <tr><td><code>overall-documents/</code></td><td>Architecture docs, fork handoff, parameter inventory, compiler status</td></tr>
 </table>
 
 <h2>The Honest Assessment</h2>
 <div class="lead" style="border-left-color: var(--blue);">
-  Every line of contract code that needs to exist for genesis is written, tested, and audited. The economic model is simulated. The governance system is built and reviewed. <strong>The Rust node now exists.</strong> What's missing is the actual fork work (swap PoW, change parameters, custom genesis), bridge coordination, frontend, and miner adoption. The path from here to a running chain is concrete engineering, not partnership-wrangling. If it catches, this is the first ErgoScript fork with on-chain governance and DeFi from block 1. If it doesn't, every line is open source and nothing was lost.
-</div>
-
-<h2>Immediate Action Items (next 1-2 weeks)</h2>
-<div class="phase">
-  <ol>
-    <li><strong>Clone &amp; build arkadianet/ergo v0.3.0</strong> — verify the toolchain works locally (Rust 1.95.0, cargo build, ~30 min)</li>
-    <li><strong>Run it against Ergo mainnet</strong> — sync to tip, confirm the v0.3.0 claim holds (a few hours)</li>
-    <li><strong>Inventory consensus parameters</strong> — find every hardcoded constant (block time, halving interval, PoW algo, network magic, genesis hash) in <code>docs/configuration.md</code> and the source. Build a one-page list of every change needed for SigmaChain.</li>
-    <li><strong>Scope the Ethash swap</strong> — Ergo uses Autolykos2 (memory-hard). YOLO wants Ethash. Locate the PoW verification module, assess swap complexity. May need to keep Autolykos2 initially to ship faster — Ethash can be a V2 decision.</li>
-    <li><strong>File a feedback issue on arkadianet/ergo</strong> — note that we're testing v0.3.0 with a real contract suite. Builds goodwill and surfaces our use case to the maintainer.</li>
-    <li><strong>Set up CI for the contracts</strong> — once we can build a local testnet node, the integration test against the real node becomes feasible.</li>
-  </ol>
+  Every consensus rule that defines SigmaChain — block time, emission curve, per-block split, storage rent cadence, miner-only rent collection — is now wired into the Rust node and unit-tested. The compiled ErgoTree bytes for the three genesis-critical contracts (emission, treasury accumulation, LP accumulation) are vendored byte-for-byte canonical against the Scala oracle. The chain hasn't been booted yet — that's Phase 5 — but every piece needed to boot it is in place and 3,829 tests say it doesn't fall over. If Phase 5 + 6 close cleanly, the next checkpoint is a real testnet block on a real network at a real height.
 </div>
 
 <footer>
