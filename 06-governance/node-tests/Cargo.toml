@@ -1,0 +1,33 @@
+[package]
+name = "yolo-governance-node-tests"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+# Phase 5.4 — YoloDAO live-node integration tests.
+#
+# Tests are gated behind the `live` feature so a plain `cargo check` /
+# `cargo test` (without the flag) compiles the crate but skips every
+# round-trip against the running node. Run the live suite with:
+#
+#   cargo test --features live -- --test-threads=1
+#
+# Tests assume `ergo-node --config sigmachain-testnet.toml` is already
+# running on 127.0.0.1:9054 with the bundled CPU miner available.
+
+[features]
+default = []
+live = []
+
+[dependencies]
+ureq = { version = "2.10", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+thiserror = "1.0"
+blake2 = "0.10"
+bs58 = "0.5"
+ergo-lib = { version = "0.28", features = ["arbitrary"] }
+
+[dev-dependencies]

@@ -1,0 +1,34 @@
+{
+  "pair": 1,
+  "setup_tx_id": "936f53d59bcab163c824ac4df705efec73e6c41610308dd1987c899314492c25",
+  "setup_height": 7528,
+  "vault": {
+    "box_id": "4bb103994cb581d8a3453b659cfb155a1aeabd4fd91db76366114e1c97b62044",
+    "value": 1000000000,
+    "p2s_address": "722Lk8bTcVVFV9CoQGAjdTmLPaiyM9HZ7qDJhrUAGZzoN4Q7PQyed8MbaqMZ4SeSC6t7XeDYHX1zYkcMCo8sAtsSBepJT7VWAGueduBJbgfpk8T88gLga8oRBRAcqD3gBp9NDSznLXNPjCzg4D67FJDobG9dnVif8cFtSQjrLywB1PeR3pEn3LPuWXapffkfxHwW6NvEi3Zc9s5uLEwhGhLScBPTrd9ikQzf1sEdYMFJeDjts3JTB8MsWvSfK4yTsRBQQ99JygZAszHJBV3hQWarHcskiGuZ8Aumqb5HQNsiWXx3d2QBGief5MHvr8V7grgZFL6AqLCw9obB8ucucoB6qrNi3sGcXPVDwU5tEGVcQXJA8ppQXMcirb61tbUnAQb7TrMejYmRKjdSXbhaMP3qHfUB7ZqxKnuJTegHheyiy8WBSG6tx1Kft2aDoSZbuDoQm8YDVfqtNMWAhzUdpQB1oKtJs1UbNfNnQhg3ivUQsrMXmg9BJ15yRFRn5bhjATfZtyUGqGP3H7Dea13JWkK5tGdx2K7",
+    "tokens": [
+      {
+        "name": "YOLO_VAULT_STATE_NFT_1",
+        "token_id": "00fd97a2dbd6ed118b2fadd526784af5d73c5d8dafe17474cf46f4a1a8447d2f",
+        "amount": 1
+      }
+    ]
+  },
+  "reserve": {
+    "box_id": "5ed69e16d51840d7cb26d964fb106086c109235c9115dcff678e47725fcec7bc",
+    "value": 2000000,
+    "p2s_address": "8dzEWAUYaNkWvDfJHQWVEv7qaeoGcNwu5KhFMseWCUagoBLg78WFJuM5Ynjr3e6VGdbMVdJZVwjZNtVu1iFYJaTWqNCUd2PXcC78W5Ec1MPHYHBpy75qy5UmPErkNg8sGg5MP3wVFjgZ2RwTzGVgqAW5sFHgiRPLpT9Jq6NuBVAvCeiiscX4mL8qsRy1sdMUaNhWceya9UJ2eL8xp4ErubgBKX19iZazPX7Vbegtgd9G4t5oVEkxZXQJ5wFwKr71CbaQQfgjo9jC5wtiPzBmscvTtkB1fR2h9DJDmH4C3E5YpsiHdVoJ2tFRRLSPEQ7zftLpawSN18bYGBFXvUpxVGdHaCgP2o19v71o3jk5YNoRwa2w3aa3nouLHDuRwdBwEeTZdz7Ux1qoprSzinEiZP3VtnwGfyLnumwpP6p1zNc86k4N9gMLESWmT9j9xrBydpqSL66RatTs3T5kMk55zgznWDfGZRbTzbns5LnCfJdeFmwGAz3qnBM8aCF8ZWDmoYMRfne7NJpUGnQbp5aiJjtTvH1qdWq9vjv38RvYtfnv5ugmSx6CLvp33Ks4WRDnwgE5t8Mveax6TvB5cBkcNGUx7LSWpowt6tpA47fQdbSLL4XCLxGReqLX714bNwoH2oKZ",
+    "tokens": [
+      {
+        "name": "YOLO_VAULT_RESERVE_NFT_1",
+        "token_id": "0129d6c9b27d239521dcf57af5af781472925c4863309bb1b08bcb2422a814ec",
+        "amount": 1
+      },
+      {
+        "name": "VYOLO",
+        "token_id": "013e858413fa2278ac675a5e7281def179d1088ec88331d48f9925277cbfb65f",
+        "amount": 35482576500000000
+      }
+    ]
+  }
+}
