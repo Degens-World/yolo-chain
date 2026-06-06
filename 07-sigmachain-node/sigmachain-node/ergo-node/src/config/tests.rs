@@ -1521,3 +1521,26 @@ fn node_section_unknown_field_rejected() {
         "error: {err}"
     );
 }
+
+#[test]
+fn validate_supported_permits_sigmachain_testnet_without_header_id() {
+    // Phase 5.3 bootstrap: a fresh SigmaChain testnet has no height-1
+    // header until block 1 is mined, so GenesisParams::sigmachain_testnet()
+    // returns header_id = None. validate_supported must accept that;
+    // Ergo paths still require the pin.
+    let spec = ergo_chain_spec::ChainSpec::sigmachain_testnet();
+    assert!(spec.genesis.header_id.is_none());
+    validate_supported(&spec).expect("SigmaChain bootstrap must pass validate_supported");
+}
+
+#[test]
+fn validate_supported_still_rejects_ergo_paths_without_header_id() {
+    // The carve-out above is keyed off Network::SigmaChainTestnet
+    // specifically. Mainnet / Testnet with a missing header_id must
+    // still bail — there's no scenario where they should boot
+    // without the historic genesis pin.
+    let mut spec = ergo_chain_spec::ChainSpec::mainnet();
+    spec.genesis.header_id = None;
+    let err = validate_supported(&spec).expect_err("mainnet without header_id must reject");
+    assert!(err.contains("header_id"), "error: {err}");
+}

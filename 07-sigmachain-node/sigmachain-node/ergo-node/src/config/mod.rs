@@ -119,26 +119,38 @@ pub(crate) fn mempool_force_off_for_mode(
 
 /// Returns `Ok(())` if the supplied [`ChainSpec`] carries everything
 /// the node needs to start end-to-end on that network. Otherwise
-/// returns a message naming the missing artifact. Currently the
-/// readiness criterion is "genesis header id and embedded boxes JSON
-/// must both be `Some(_)`"; this is the data the genesis-loading and
-/// NiPoPoW verifier paths require at startup. The runtime path
-/// `NodeConfig::load` calls this gate immediately after building the
-/// spec, so any network whose artifacts aren't yet extracted fails
-/// fast with a pointer to the provisioning doc instead of drifting on
-/// partial config.
+/// returns a message naming the missing artifact.
+///
+/// Readiness criteria:
+/// - `genesis.boxes_json` must always be `Some(_)` — the state store
+///   needs it to seed the AVL+ tree at height 0.
+/// - `genesis.header_id` must be `Some(_)` for Ergo mainnet / testnet
+///   (their genesis blocks are historic; NiPoPoW verification and
+///   peer-handshake checkpointing both require the pinned id), and is
+///   tolerated as `None` for `Network::SigmaChainTestnet` while the
+///   network is bootstrapping — a fresh chain has no height-1 header
+///   until block 1 is mined. The runtime header chain is keyed off
+///   the live store rather than the chain-spec pin, and the only
+///   genesis_id consumer (`PopowBootstrap::new`) is gated behind
+///   `[node.nipopow] nipopow_bootstrap = true`, which is the user's
+///   opt-in for proof-driven sync.
+///
+/// The runtime path `NodeConfig::load` calls this gate immediately
+/// after building the spec, so any network whose artifacts aren't yet
+/// extracted fails fast with a pointer to the provisioning doc
+/// instead of drifting on partial config.
 pub fn validate_supported(spec: &ChainSpec) -> Result<(), String> {
     let net = spec.network.as_str();
-    if spec.genesis.header_id.is_none() {
+    if spec.genesis.boxes_json.is_none() {
         return Err(format!(
-            "{net} genesis header_id not embedded — \
+            "{net} genesis boxes_json not embedded — \
              extract via test-vectors/{net}/PROVISIONING.md and \
              populate GenesisParams::{net}() in ergo-chain-spec"
         ));
     }
-    if spec.genesis.boxes_json.is_none() {
+    if spec.genesis.header_id.is_none() && !matches!(spec.network, Network::SigmaChainTestnet) {
         return Err(format!(
-            "{net} genesis boxes_json not embedded — \
+            "{net} genesis header_id not embedded — \
              extract via test-vectors/{net}/PROVISIONING.md and \
              populate GenesisParams::{net}() in ergo-chain-spec"
         ));

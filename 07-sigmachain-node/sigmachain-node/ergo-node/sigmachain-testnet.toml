@@ -12,9 +12,9 @@
 # kick in once `Network::SigmaChainTestnet` is resolved at startup.
 
 network  = "sigmachain-testnet"
-# data_dir = "./sigmachain-data"   # uncomment to point at a dedicated dir;
-                                   # defaults to ./ergo-data which collides with
-                                   # any Ergo state already there.
+data_dir = "./sigmachain-data"     # dedicated dir; the default ./ergo-data
+                                   # would collide with any Ergo state in the
+                                   # same working directory.
 
 [node]
 agent_name = "sigmachain-rust"
@@ -56,7 +56,7 @@ enabled = false                    # external-miner API. Flip to `true` and set
 default_level = "info"
 
 [logging.file]
-dir       = "."
+dir       = "logs"                 # resolved under data_dir per config-load.rs
 prefix    = "sigmachain-node"
 rotation  = "daily"
 max_files = 14
