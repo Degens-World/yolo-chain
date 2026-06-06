@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>YOLO ↔ Ergo Trustless Peg — Flow Diagram</title>
+<style>
+  :root{
+    --yolo: #f59e0b;
+    --yolo-bg: #fef3c7;
+    --yolo-deep: #92400e;
+    --ergo: #6366f1;
+    --ergo-bg: #e0e7ff;
+    --ergo-deep: #312e81;
+    --user: #16a34a;
+    --user-bg: #dcfce7;
+    --relay: #64748b;
+    --relay-bg: #e2e8f0;
+    --contract: #1e293b;
+    --warn: #dc2626;
+    --warn-bg: #fee2e2;
+    --good: #059669;
+    --good-bg: #d1fae5;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --line: #cbd5e1;
+    --ink: #0f172a;
+    --muted: #475569;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px}
+  h1{font-size:32px;margin:0 0 8px;color:var(--ink)}
+  h2{font-size:22px;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:17px;margin:24px 0 12px}
+  .lede{font-size:15px;color:var(--muted);margin:0 0 24px;max-width:900px}
+  code{font-family:"SF Mono",Monaco,Consolas,monospace;font-size:13px;background:#eef2f7;padding:1px 5px;border-radius:3px}
+
+  /* Cast of characters */
+  .cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:32px}
+  .cast-card{padding:14px;border-radius:8px;border:1px solid var(--line);background:var(--card)}
+  .cast-card .role{font-weight:600;font-size:14px;margin-bottom:4px}
+  .cast-card .who{font-size:12px;color:var(--muted);line-height:1.4}
+  .cast-card.user{border-left:4px solid var(--user)}
+  .cast-card.relayer{border-left:4px solid var(--relay)}
+  .cast-card.yolo{border-left:4px solid var(--yolo)}
+  .cast-card.ergo{border-left:4px solid var(--ergo)}
+
+  /* Step container */
+  .flow{margin-bottom:48px}
+  .flow-title{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .flow-title .arrow-big{font-size:24px;color:var(--muted)}
+  .flow-summary{background:#f1f5f9;padding:12px 16px;border-radius:6px;font-size:14px;color:var(--muted);margin-bottom:20px}
+
+  .step{
+    display:grid;
+    grid-template-columns:60px 1fr;
+    gap:16px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px;
+    margin-bottom:14px;
+    position:relative;
+  }
+  .step-num{
+    font-size:28px;
+    font-weight:700;
+    color:var(--muted);
+    text-align:center;
+    line-height:1;
+    padding-top:4px;
+  }
+  .step-body .step-head{
+    font-size:16px;
+    font-weight:600;
+    margin-bottom:8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .step-body .step-desc{font-size:14px;margin-bottom:10px}
+  .step-body .step-desc .eli5{color:var(--muted);font-style:italic}
+  .step-meta{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:8px;
+    margin-top:8px;
+    font-size:12.5px;
+  }
+  .meta{padding:8px 10px;border-radius:5px;background:#f8fafc;border-left:3px solid var(--line)}
+  .meta b{display:block;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin-bottom:3px}
+  .meta.who{border-left-color:var(--user)}
+  .meta.where{border-left-color:var(--contract)}
+  .meta.tx{border-left-color:#0891b2}
+  .meta.verify{border-left-color:var(--good)}
+
+  /* Chain badges in step heads */
+  .chain{
+    display:inline-block;
+    font-size:10.5px;
+    font-weight:700;
+    padding:2px 8px;
+    border-radius:99px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .chain.yolo{background:var(--yolo-bg);color:var(--yolo-deep)}
+  .chain.ergo{background:var(--ergo-bg);color:var(--ergo-deep)}
+  .chain.both{background:linear-gradient(90deg,var(--yolo-bg) 50%,var(--ergo-bg) 50%);color:var(--ink)}
+  .chain.offchain{background:var(--relay-bg);color:#334155}
+
+  .actor{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:2px 7px;
+    border-radius:4px;
+    margin-right:4px;
+  }
+  .actor.user{background:var(--user-bg);color:#14532d}
+  .actor.relayer{background:var(--relay-bg);color:#1e293b}
+  .actor.contract{background:#fef9c3;color:#713f12}
+  .actor.miner{background:#fce7f3;color:#831843}
+
+  /* Big visual: split chains */
+  .chains-vis{
+    display:grid;
+    grid-template-columns:1fr 80px 1fr;
+    gap:0;
+    margin:24px 0;
+    border:1px solid var(--line);
+    border-radius:10px;
+    overflow:hidden;
+  }
+  .chain-col{padding:16px;background:var(--card)}
+  .chain-col.yolo{background:linear-gradient(180deg,#fef3c7 0%,#fffbeb 100%);border-right:1px dashed var(--line)}
+  .chain-col.ergo{background:linear-gradient(180deg,#e0e7ff 0%,#eef2ff 100%);border-left:1px dashed var(--line)}
+  .chain-col h4{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+  .chain-col.yolo h4{color:var(--yolo-deep)}
+  .chain-col.ergo h4{color:var(--ergo-deep)}
+  .bridge-col{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:#f1f5f9;
+    padding:8px 4px;
+    font-size:11px;
+    color:var(--muted);
+    text-align:center;
+  }
+  .bridge-col .arr{font-size:24px;line-height:1}
+
+  .box-icon{
+    background:white;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 10px;
+    margin:6px 0;
+    font-size:12px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04)
+  }
+  .box-icon.lock{border-left:3px solid #b91c1c}
+  .box-icon.relay{border-left:3px solid var(--relay)}
+  .box-icon.mint{border-left:3px solid var(--good)}
+  .box-icon.burn{border-left:3px solid #ea580c}
+  .box-icon .lbl{font-weight:600;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
+  .box-icon .val{font-size:13px;margin-top:2px}
+
+  .key-insight{
+    background:linear-gradient(135deg,#fefce8 0%,#fef3c7 100%);
+    border:1px solid #fcd34d;
+    border-radius:10px;
+    padding:18px;
+    margin-top:32px;
+  }
+  .key-insight h3{margin-top:0;color:#713f12}
+  .key-insight ul{margin:0;padding-left:20px;font-size:14px}
+  .key-insight li{margin-bottom:6px}
+
+  .warning{
+    background:var(--warn-bg);
+    border:1px solid #fca5a5;
+    border-radius:6px;
+    padding:10px 14px;
+    font-size:13px;
+    margin:12px 0;
+  }
+  .warning b{color:var(--warn)}
+
+  .footnote{font-size:12px;color:var(--muted);margin-top:32px;padding-top:16px;border-top:1px solid var(--line)}
+
+  /* Wait-row */
+  .wait{
+    text-align:center;
+    padding:12px;
+    color:var(--muted);
+    font-size:13px;
+    font-style:italic;
+    background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#f1f5f9 8px,#f1f5f9 16px);
+    border-radius:6px;
+    margin:8px 0;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>YOLO ↔ Ergo Trustless Peg — Flow Diagram</h1>
+<p class="lede">
+  How a user moves coins between YOLO (a dedicated-PoW Autolykos2 chain) and Ergo with
+  <b>no federation, no oracle, no trusted bridge operator</b>. Both chains run ErgoScript 6.0,
+  so each chain's contracts can independently verify the other chain's block headers and transactions.
+</p>
+
+<h2>Cast of characters</h2>
+<div class="cast">
+  <div class="cast-card user">
+    <div class="role">👤 Alice</div>
+    <div class="who">The user. Wants to move funds between chains. Submits the lock and the mint/unlock transactions.</div>
+  </div>
+  <div class="cast-card relayer">
+    <div class="role">📡 Relayer</div>
+    <div class="who">Anyone with a node. Pushes block headers from one chain into the relay contract on the other. Permissionless — no privilege.</div>
+  </div>
+  <div class="cast-card yolo">
+    <div class="role">⛏️ YOLO miners</div>
+    <div class="who">Produce YOLO blocks via Autolykos2. They don't run the bridge — they just mine YOLO normally.</div>
+  </div>
+  <div class="cast-card ergo">
+    <div class="role">⛏️ Ergo miners</div>
+    <div class="who">Produce Ergo blocks. Same role — mine normally, no bridge duty.</div>
+  </div>
+  <div class="cast-card yolo">
+    <div class="role">📜 Contracts on YOLO</div>
+    <div class="who">Lock-USE box (holds locked Ergo assets), Mint-wYOLO box, ErgoRelay box (knows Ergo's chain), DoubleSpendPrevention.</div>
+  </div>
+  <div class="cast-card ergo">
+    <div class="role">📜 Contracts on Ergo</div>
+    <div class="who">Lock-YOLO box (holds locked YOLO when wrapped), Mint-wUSE box, YoloRelay box (knows YOLO's chain), DoubleSpendPrevention.</div>
+  </div>
+</div>
+
+<h2>Setup: two relays run in the background, forever</h2>
+<p class="lede" style="margin-bottom:12px">
+  Before any user can bridge, both chains need a live <b>header relay</b> of the other chain.
+  This is independent of users — it just keeps running.
+</p>
+
+<div class="chains-vis">
+  <div class="chain-col yolo">
+    <h4>YOLO Chain</h4>
+    <div class="box-icon relay">
+      <div class="lbl">ErgoRelay box</div>
+      <div class="val">Stores AVL tree of Ergo headers it has verified. Updated by anyone submitting new Ergo headers + AVL insert proofs.</div>
+    </div>
+    <div class="box-icon" style="border-left:3px solid var(--good)">
+      <div class="lbl">Verifier op used</div>
+      <div class="val"><code>ergoHeader.checkPow</code> — Ergo's built-in. Fixed cost 700.</div>
+    </div>
+  </div>
+  <div class="bridge-col">
+    <div class="arr">⇆</div>
+    <div>two independent relays</div>
+  </div>
+  <div class="chain-col ergo">
+    <h4>Ergo Chain</h4>
+    <div class="box-icon relay">
+      <div class="lbl">YoloRelay box</div>
+      <div class="val">Stores AVL tree of YOLO headers it has verified. Updated by anyone submitting new YOLO headers + AVL insert proofs.</div>
+    </div>
+    <div class="box-icon" style="border-left:3px solid var(--good)">
+      <div class="lbl">Verifier op used</div>
+      <div class="val"><code>Global.powHit(k, msg, nonce, h, N)</code> — generalized Autolykos2 for custom params. Cost ~1000.</div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">R</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Relayer pushes a new header</span>
+      <span class="chain both">happens on both chains, always</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">A bot watches chain X for new blocks. When one arrives, the bot builds a tx that spends the relay box on chain Y, attaches the new header bytes, attaches AVL insertion proofs (computed off-chain), and submits.</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor relayer">RELAYER</span> Anyone running a node. Pays tx fee on the target chain.</div>
+      <div class="meta verify"><b>What the contract checks</b>PoW math on the submitted header, parent linkage, cumulative-work rules. Rejects any forged or weak-PoW header.</div>
+      <div class="meta tx"><b>Result</b>Relay box updated. New header now provable to other contracts as a data input.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FLOW A ============ -->
+<h2>Flow A: send <span class="chain yolo">YOLO</span> from YOLO chain → Ergo (as wYOLO)</h2>
+<div class="flow-summary">
+  <b>Story:</b> Alice has 100 YOLO on the YOLO chain. She wants 100 wYOLO tokens on Ergo
+  (so she can trade them on Ergo DEXes). She locks the YOLO on its native chain, proves the lock
+  to Ergo, and Ergo mints wYOLO to her.
+</div>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Alice locks 100 YOLO in a Lock box</span>
+      <span class="chain yolo">YOLO chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Alice sends her 100 YOLO into a special contract box. The box says: "I hold 100 YOLO for Alice's Ergo address; I can only be unlocked by proof that the corresponding wYOLO was burned on Ergo, plus a waiting period."</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor user">ALICE</span> Standard wallet transaction.</div>
+      <div class="meta where"><b>Box created</b>Lock-YOLO box on YOLO chain. Registers store: amount, Alice's Ergo destination address, lock height.</div>
+      <div class="meta tx"><b>Tx fee</b>Tiny YOLO fee.</div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>A YOLO miner mines Alice's tx into block N</span>
+      <span class="chain yolo">YOLO chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Normal mining. The miner doesn't know or care that this is a bridge tx. It's just another transaction in their mempool.</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor miner">YOLO MINER</span> The block producer. No bridge-aware logic needed.</div>
+      <div class="meta verify"><b>What happens</b>Alice's Lock box is now in YOLO's UTXO set, at block height N.</div>
+    </div>
+  </div>
+</div>
+
+<div class="wait">⏳ Wait ~50 YOLO confirmations to prevent reorgs unwinding the lock</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Relayers push YOLO headers N through N+50 into the YoloRelay on Ergo</span>
+      <span class="chain ergo">Ergo chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">This is happening in the background continuously anyway. By the time Alice has waited her confirmations, the YoloRelay on Ergo already knows about block N+50.</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor relayer">RELAYER</span> Anyone. Pays Ergo tx fee per header. Nothing privileged.</div>
+      <div class="meta verify"><b>What Ergo verifies in-script</b><code>Global.powHit(k, msg, nonce, h, N)</code> recomputes the Autolykos2 hit for the YOLO header, compares to the YOLO target from <code>nBits</code>. AVL insert proofs validate the header is correctly chained.</div>
+      <div class="meta tx"><b>Result on Ergo</b>YoloRelay box's AVL tree now contains YOLO blocks up to N+50, including the merkle root of block N.</div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Alice submits the Mint-wYOLO transaction on Ergo</span>
+      <span class="chain ergo">Ergo chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Alice's wallet builds a tx that says: "I want 100 wYOLO. Here is proof that my YOLO Lock box really exists in YOLO block N, here is the YoloRelay box as evidence that block N has 50+ confirmations on YOLO."</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor user">ALICE</span> Or anyone helping her — the proof doesn't require her signature, just the merkle proof.</div>
+      <div class="meta where"><b>Inputs to the Mint contract on Ergo</b>(a) <b>Data input:</b> YoloRelay box. (b) <b>Context vars:</b> Alice's YOLO Lock box bytes, merkle proof of its inclusion in YOLO block N, YOLO header id, header lookup AVL proof.</div>
+      <div class="meta verify"><b>What the Mint contract checks</b>(1) YoloRelay's best-chain AVL contains block N. (2) Block N has ≥50 confs (compare to YoloRelay's tip height). (3) Merkle path from the Lock-tx hash hashes up to block N's transactionsRoot. (4) The Lock box matches the expected Lock contract template. (5) DoubleSpendPrevention tree doesn't already contain this Lock box ID.</div>
+      <div class="meta tx"><b>Result</b>100 wYOLO tokens minted to Alice's Ergo address. Lock box ID added to DoubleSpendPrevention tree.</div>
+    </div>
+  </div>
+</div>
+
+<div class="warning">
+  <b>Key trust observation:</b> No one was trusted at any step. The Mint contract on Ergo doesn't trust Alice (she could lie),
+  doesn't trust the relayer (the relayer can only submit headers that pass PoW — they can't forge YOLO state),
+  and doesn't trust any human. It only trusts its own ErgoScript verification of math.
+</div>
+
+<!-- ============ FLOW B ============ -->
+<h2>Flow B: send <span class="chain ergo">USE</span> from Ergo → YOLO (as wUSE)</h2>
+<div class="flow-summary">
+  <b>Story:</b> Alice has 100 USE (a stablecoin on Ergo) and wants to spend them on a dApp on YOLO.
+  Mirror of Flow A — the chain roles just swap.
+</div>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Alice locks 100 USE in a Lock-USE box on Ergo</span>
+      <span class="chain ergo">Ergo chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Same idea, opposite chain. USE tokens go into a contract box that says "release only on proof of wUSE burn on YOLO."</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor user">ALICE</span> Wallet tx on Ergo.</div>
+      <div class="meta where"><b>Box created</b>Lock-USE box on Ergo. Registers: USE amount, Alice's YOLO address, lock height.</div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>An Ergo miner mines Alice's tx into Ergo block M</span>
+      <span class="chain ergo">Ergo chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Same as before, just on Ergo. Standard mining.</span>
+    </div>
+  </div>
+</div>
+
+<div class="wait">⏳ Wait ~30 Ergo confirmations</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Relayers push Ergo headers M through M+30 into the ErgoRelay on YOLO</span>
+      <span class="chain yolo">YOLO chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Same background process, opposite direction. This is the easy direction because YOLO contracts can call <code>ergoHeader.checkPow</code> directly — a single fixed-cost op.</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta verify"><b>What YOLO verifies in-script</b><code>ergoHeader.checkPow</code> — the built-in 6.0 method. One line, cost 700. No parameter wrangling needed because Ergo header format is native.</div>
+      <div class="meta tx"><b>Result on YOLO</b>ErgoRelay box's AVL tree now contains Ergo blocks up to M+30, including the merkle root of block M.</div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Alice submits the Mint-wUSE transaction on YOLO</span>
+      <span class="chain yolo">YOLO chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Same as Flow A step 4, with chains swapped. Alice (or anyone for her) proves to YOLO that the USE Lock box exists in Ergo block M, and YOLO mints her 100 wUSE.</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor user">ALICE</span> Standard YOLO wallet tx.</div>
+      <div class="meta verify"><b>What the YOLO Mint contract checks</b>ErgoRelay knows block M, ≥30 Ergo confs since M, merkle path proves Lock-USE tx is in block M's transactionsRoot, Lock box matches template, no double-mint.</div>
+      <div class="meta tx"><b>Result</b>100 wUSE tokens minted on YOLO to Alice's address.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FLOW C ============ -->
+<h2>Flow C: unwrap wYOLO on Ergo back to YOLO (the round trip)</h2>
+<div class="flow-summary">
+  <b>Story:</b> Alice has 100 wYOLO on Ergo and wants her original 100 YOLO back on the YOLO chain.
+  Direction reverses: she burns on Ergo, proves the burn to YOLO, the YOLO Lock box releases.
+</div>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Alice burns 100 wYOLO on Ergo</span>
+      <span class="chain ergo">Ergo chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Alice spends her 100 wYOLO into a "Burn" contract box that destroys the tokens (or sends to a known-unspendable address) and records: "100 wYOLO burned, return to Alice's YOLO address X, burn height H."</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta who"><b>Who submits</b><span class="actor user">ALICE</span></div>
+      <div class="meta where"><b>Box created</b>Burn-receipt box on Ergo. This is the analogue of the Lock box, but in reverse direction.</div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Ergo miners include the burn tx in block M'</span>
+      <span class="chain ergo">Ergo chain</span>
+    </div>
+  </div>
+</div>
+
+<div class="wait">⏳ Wait Ergo confirmations + relayer pushes headers M'..M'+30 to ErgoRelay on YOLO</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <div class="step-head">
+      <span>Alice submits the Unlock-YOLO transaction on YOLO</span>
+      <span class="chain yolo">YOLO chain</span>
+    </div>
+    <div class="step-desc">
+      <span class="eli5">Alice's wallet builds a tx that says: "Open the Lock-YOLO box from way back when. Here is proof that I burned the corresponding wYOLO on Ergo, and that the burn has enough confirmations."</span>
+    </div>
+    <div class="step-meta">
+      <div class="meta where"><b>Inputs</b>The original Lock-YOLO box (still sitting on YOLO since Flow A), ErgoRelay box as data input, context vars with the Burn-receipt box bytes + merkle proof + header lookup proof.</div>
+      <div class="meta verify"><b>What the Unlock contract checks</b>(1) ErgoRelay knows Ergo block M'. (2) ≥30 Ergo confs. (3) Merkle path proves Burn-receipt tx is in block M'. (4) Burn amount matches Lock amount. (5) Burn destination address matches Alice. (6) DoubleSpendPrevention on YOLO doesn't already contain this Burn box ID.</div>
+      <div class="meta tx"><b>Result</b>Lock-YOLO box on YOLO opens. Alice gets her original 100 YOLO back. Round trip complete.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TLDR ============ -->
+<div class="key-insight">
+  <h3>What makes this trustless (the ELI5 sentence)</h3>
+  <ul>
+    <li><b>The mint/unlock contracts do not trust the relayer.</b> The relayer can only submit headers that pass PoW verification in-script — they can't forge a YOLO block any more than a real YOLO miner can without doing the work.</li>
+    <li><b>The mint/unlock contracts do not trust Alice.</b> She must provide a real merkle proof against a real header that the relay has accepted. If she lies, the contract rejects the tx.</li>
+    <li><b>No human has a privileged key anywhere in this flow.</b> The whole bridge runs on ErgoScript verifying math: PoW math, merkle math, AVL tree math.</li>
+    <li><b>The only "actor" with any real role is the relayer</b>, and they are <i>completely substitutable</i> — anyone can take over the role at any time by just running the bot. There is no relayer set, no quorum, no governance.</li>
+  </ul>
+</div>
+
+<h2>Who submits which transaction (cheat sheet)</h2>
+<table style="width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:13.5px">
+  <thead>
+    <tr style="background:#f1f5f9;text-align:left">
+      <th style="padding:10px;border-bottom:1px solid var(--line)">Transaction</th>
+      <th style="padding:10px;border-bottom:1px solid var(--line)">Chain</th>
+      <th style="padding:10px;border-bottom:1px solid var(--line)">Submitted by</th>
+      <th style="padding:10px;border-bottom:1px solid var(--line)">Privileged?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="padding:10px;border-bottom:1px solid var(--line)">Lock YOLO / Lock USE</td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="chain yolo">YOLO</span> / <span class="chain ergo">Ergo</span></td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="actor user">ALICE</span></td><td style="padding:10px;border-bottom:1px solid var(--line)">No</td></tr>
+    <tr><td style="padding:10px;border-bottom:1px solid var(--line)">Header push to relay</td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="chain both">target chain</span></td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="actor relayer">ANYONE</span></td><td style="padding:10px;border-bottom:1px solid var(--line)">No — contract verifies PoW</td></tr>
+    <tr><td style="padding:10px;border-bottom:1px solid var(--line)">Mint wYOLO / wUSE</td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="chain ergo">Ergo</span> / <span class="chain yolo">YOLO</span></td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="actor user">ALICE</span> (or anyone with her proof)</td><td style="padding:10px;border-bottom:1px solid var(--line)">No</td></tr>
+    <tr><td style="padding:10px;border-bottom:1px solid var(--line)">Burn wYOLO / wUSE</td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="chain ergo">Ergo</span> / <span class="chain yolo">YOLO</span></td><td style="padding:10px;border-bottom:1px solid var(--line)"><span class="actor user">ALICE</span></td><td style="padding:10px;border-bottom:1px solid var(--line)">No</td></tr>
+    <tr><td style="padding:10px">Unlock original (release locked funds)</td><td style="padding:10px"><span class="chain yolo">YOLO</span> / <span class="chain ergo">Ergo</span></td><td style="padding:10px"><span class="actor user">ALICE</span> (or anyone with burn proof)</td><td style="padding:10px">No</td></tr>
+  </tbody>
+</table>
+
+<div class="footnote">
+  <b>What is NOT in this picture, and why:</b><br>
+  <b>Miners do not run any bridge logic.</b> They produce blocks the way they always do. The bridge exists entirely as user-land contract logic on both chains.<br>
+  <b>No federation, multi-sig, or oracle.</b> The verification surface is: (a) Autolykos2 PoW math via ErgoScript 6.0's <code>Global.powHit</code> and <code>Header.checkPow</code>; (b) merkle inclusion proofs against block headers; (c) AVL trees for header history and double-spend prevention.<br>
+  <b>The current ross-weir reference repo</b> has the BTC→Ergo relay shipping (~3 test cases on real headers), plus the merged-mining sidechain lock/unlock contracts. For YOLO ↔ Ergo specifically, the BTC relay needs to be reworked to call <code>Global.powHit</code> instead of <code>doubleSha256</code>, and the lock/unlock contracts need to swap the merged-miner-signature gate (<code>preHeader.minerPk</code>) for the relay-data-input pattern shown above.
+</div>
+
+</div>
+</body>
+</html>
