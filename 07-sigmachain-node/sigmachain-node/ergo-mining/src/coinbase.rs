@@ -772,6 +772,162 @@ mod tests {
         assert_eq!(tx.output_candidates[3].value, 850_000_000);
     }
 
+    /// Drive the Python reference at `01-emission-tests/emission_model.py`
+    /// to get its per-height (block_reward, miner, treasury, lp) split
+    /// for `heights`, and parse the JSON dump back into a Rust
+    /// `Vec<(height, block_reward, miner, treasury, lp)>`.
+    ///
+    /// Shells out to `python3`. Skip-on-missing rather than fail: a
+    /// CI runner without Python should still see the rest of the
+    /// suite green; the parity is verified on the developer's box
+    /// and the YOLO-curve constants themselves are unit-tested above.
+    fn python_oracle_split(
+        heights: &[u32],
+    ) -> Option<Vec<(u32, u64, u64, u64, u64)>> {
+        use std::process::Command;
+        // Resolve the Python oracle path from this crate's manifest
+        // dir: ergo-mining is at ./ergo-mining inside the node repo,
+        // and the oracle lives at <yolo-chain>/01-emission-tests.
+        let oracle_dir = format!(
+            "{}/../../../01-emission-tests",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let heights_csv = heights
+            .iter()
+            .map(|h| h.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let script = format!(
+            "import sys, json; sys.path.insert(0, '{oracle_dir}'); \
+             import emission_model as m; \
+             rows = []; \
+             [rows.append([h, m.block_reward(h), \
+                           m.split_reward(m.block_reward(h))[0], \
+                           m.split_reward(m.block_reward(h))[1], \
+                           m.split_reward(m.block_reward(h))[2]]) \
+              for h in [{heights_csv}]]; \
+             print(json.dumps(rows))"
+        );
+        let out = Command::new("python3").arg("-c").arg(&script).output().ok()?;
+        if !out.status.success() {
+            eprintln!(
+                "python3 oracle exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr),
+            );
+            return None;
+        }
+        let body = String::from_utf8(out.stdout).ok()?;
+        let rows: Vec<[u64; 5]> = serde_json::from_str(body.trim()).ok()?;
+        Some(
+            rows.into_iter()
+                .map(|r| (r[0] as u32, r[1], r[2], r[3], r[4]))
+                .collect(),
+        )
+    }
+
+    /// Cross-check the Rust YOLO emission tx builder against the
+    /// Python reference at `01-emission-tests/emission_model.py` —
+    /// the authoritative oracle per `emission_model.py` line 2.
+    ///
+    /// For each height in `heights`:
+    ///   1. Python: compute (block_reward, miner, treasury, lp).
+    ///   2. Rust:   build_yolo_emission_tx → inspect output values.
+    ///   3. Assert byte-for-byte equality across all four fields
+    ///      plus conservation (sum of outputs minus the carry-over
+    ///      emission box equals the input box value).
+    ///
+    /// Covers heights at the genesis block (1), early steady-state
+    /// (2, 5, 10, 100), the first three halving boundaries, and a
+    /// height deep into the tail-emission regime.
+    #[test]
+    fn yolo_emission_tx_matches_python_oracle_across_halvings() {
+        let yolo = YoloEmissionParams::sigmachain_testnet();
+        // Probe heights: first block, early steady-state, just below /
+        // at / just above each of the first three halvings, and one
+        // deep tail-emission sample.
+        let heights: Vec<u32> = vec![
+            1, 2, 5, 10, 100,
+            yolo.blocks_per_halving - 1,
+            yolo.blocks_per_halving,
+            yolo.blocks_per_halving + 1,
+            2 * yolo.blocks_per_halving,
+            5 * yolo.blocks_per_halving,
+            5 * yolo.blocks_per_halving + 1,
+            7_500_000,
+        ];
+        let Some(oracle) = python_oracle_split(&heights) else {
+            eprintln!(
+                "skipping: python3 + emission_model.py oracle not available; \
+                 the YOLO curve constants are still covered by sibling tests."
+            );
+            return;
+        };
+        assert_eq!(oracle.len(), heights.len(), "oracle row count mismatch");
+
+        // Use a fresh input emission box per probe: the test only cares
+        // about output split correctness, not depletion.
+        let treasury_bytes = yolo_treasury_script();
+        let lp_bytes = yolo_lp_script();
+        for (i, &h) in heights.iter().enumerate() {
+            let (py_h, py_block, py_miner, py_treasury, py_lp) = oracle[i];
+            assert_eq!(py_h, h, "oracle returned wrong height row");
+            // Input emission box value: big enough to not exhaust at
+            // any probe height (the genesis box value is the maximum).
+            let input_value = 176_525_325_000_000_000u64;
+            let input_box = yolo_input_box_at(input_value);
+            let tx = build_yolo_emission_tx(
+                &input_box,
+                &[0x02u8; 33],
+                h,
+                &yolo,
+                &treasury_bytes,
+                &lp_bytes,
+            )
+            .unwrap_or_else(|e| panic!("h={h}: build_yolo_emission_tx failed: {e:?}"));
+            assert_eq!(tx.output_candidates.len(), 4, "h={h}: expected 4 outputs");
+
+            let new_emission = &tx.output_candidates[0];
+            let treasury = &tx.output_candidates[1];
+            let lp = &tx.output_candidates[2];
+            let miner = &tx.output_candidates[3];
+
+            assert_eq!(
+                miner.value, py_miner,
+                "h={h}: miner reward Rust={} Python={}",
+                miner.value, py_miner,
+            );
+            assert_eq!(
+                treasury.value, py_treasury,
+                "h={h}: treasury reward Rust={} Python={}",
+                treasury.value, py_treasury,
+            );
+            assert_eq!(
+                lp.value, py_lp,
+                "h={h}: lp reward Rust={} Python={}",
+                lp.value, py_lp,
+            );
+            assert_eq!(
+                miner.value + treasury.value + lp.value,
+                py_block,
+                "h={h}: split sum != Python block_reward",
+            );
+            assert_eq!(
+                new_emission.value + treasury.value + lp.value + miner.value,
+                input_value,
+                "h={h}: nanoYOLO conservation violated",
+            );
+            // Continuation emission box value = input minus the
+            // per-block block_reward (no rounding loss — the miner
+            // share is computed as the remainder).
+            assert_eq!(
+                new_emission.value,
+                input_value - py_block,
+                "h={h}: continuation emission box value drift",
+            );
+        }
+    }
+
     #[test]
     fn yolo_emission_tx_rejects_exhausted_box() {
         let yolo = YoloEmissionParams::sigmachain_testnet();
