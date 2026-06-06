@@ -984,7 +984,7 @@ async fn run_inner_with_backend(
             }
             None => ergo_mining::handle::RewardKeySource::Wallet,
         };
-        let handle = ergo_mining::handle::MiningHandle::with_reward_key(
+        let mut handle = ergo_mining::handle::MiningHandle::with_reward_key(
             reward_key,
             config.chain_spec.monetary,
             config.chain_spec.reemission.clone(),
@@ -994,6 +994,22 @@ async fn run_inner_with_backend(
             config.mining_config.claim_storage_rent,
             config.mining_config.max_storage_rent_claims,
         );
+        // SigmaChain dispatch: when the chain spec selects the YOLO
+        // geometric-halving emission curve, attach the per-block params
+        // + the canonical treasury / LP accumulation script bytes so
+        // the candidate builder calls build_yolo_emission_tx instead
+        // of the Ergo emission tx.
+        if let ergo_chain_spec::EmissionCurve::Yolo(yolo_params) = &config.chain_spec.emission_curve
+        {
+            handle = handle.with_yolo_context(ergo_mining::handle::YoloEmissionContext {
+                params: yolo_params.clone(),
+                treasury_script_bytes:
+                    ergo_chain_spec::yolo_genesis_scripts::treasury_accumulation_ergo_tree_bytes(),
+                lp_script_bytes:
+                    ergo_chain_spec::yolo_genesis_scripts::lp_accumulation_ergo_tree_bytes(),
+            });
+        }
+        let handle = handle;
         let network_prefix = config.chain_spec.network_params.address_prefix;
         // Subscribe to the handle's serve-state-change notifications so the
         // bridge's longpoll wait wakes the instant the served candidate changes

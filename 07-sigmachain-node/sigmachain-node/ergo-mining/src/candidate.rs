@@ -119,6 +119,7 @@ pub fn generate_candidate<V: CandidateStateView>(
     chain_config: &DifficultyParams,
     eligible_rent_boxes: &[ErgoBox],
     genesis_emission_box: Option<&ErgoBox>,
+    yolo_context: Option<&crate::handle::YoloEmissionContext>,
 ) -> Result<Option<(Candidate, WorkMessage)>, MiningError> {
     // 1. Tip + parent header (all reads via one committed view — see
     //    `CandidateStateView`; the snapshot impl sources them from a single
@@ -170,10 +171,16 @@ pub fn generate_candidate<V: CandidateStateView>(
     };
 
     // `last_headers` is `[Header; 10]` for `CONTEXT.headers` in script
-    // evaluation. At genesis bootstrap there are no prior blocks; fill
-    // with 10 copies of the synthesized pseudo-parent (the coinbase
-    // emission script does not reference `CONTEXT.headers`).
-    let last_headers = if is_genesis_bootstrap {
+    // evaluation. `view.last_applied_chain_window_10` requires the
+    // applied chain to be >= 10 deep; on a fresh chain bootstrap the
+    // first 9 blocks don't have that depth yet, and the call errors
+    // with `EarlyIBD`. Fill the array with 10 copies of the parent
+    // header in those early heights — the coinbase emission script
+    // does not reference `CONTEXT.headers`, so the fill content is
+    // unobserved here. Ergo paths only hit this branch on a fresh
+    // genesis-from-zero boot, which they don't normally do (mainnet
+    // and testnet download block 1 from peers rather than mine it).
+    let last_headers = if parent_height < 10 {
         std::array::from_fn(|_| parent_header.clone())
     } else {
         view.last_applied_chain_window_10().map_err(state_err)?
@@ -282,11 +289,31 @@ pub fn generate_candidate<V: CandidateStateView>(
     } else {
         lookup_emission_box_from_parent(view, &parent_id, &parent_header)?
     };
-    let emission_tx = match reemission {
-        Some(reem) if candidate_height > reem.activation_height => {
-            build_post_eip27_emission_tx(&emission_box, miner_pk, candidate_height, monetary, reem)?
+    let emission_tx = if let Some(yolo) = yolo_context {
+        // SigmaChain: YOLO geometric-halving curve with 3-way split.
+        // Cross-checked against `01-emission-tests/emission_model.py` —
+        // see coinbase.rs::yolo_emission_tx_matches_python_oracle_*.
+        crate::coinbase::build_yolo_emission_tx(
+            &emission_box,
+            miner_pk,
+            candidate_height,
+            &yolo.params,
+            &yolo.treasury_script_bytes,
+            &yolo.lp_script_bytes,
+        )?
+    } else {
+        match reemission {
+            Some(reem) if candidate_height > reem.activation_height => {
+                build_post_eip27_emission_tx(
+                    &emission_box,
+                    miner_pk,
+                    candidate_height,
+                    monetary,
+                    reem,
+                )?
+            }
+            _ => build_pre_eip27_emission_tx(&emission_box, miner_pk, candidate_height, monetary)?,
         }
-        _ => build_pre_eip27_emission_tx(&emission_box, miner_pk, candidate_height, monetary)?,
     };
 
     // 9. Validate the emission (coinbase) tx → CheckedTransaction, using the

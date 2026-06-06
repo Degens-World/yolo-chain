@@ -468,6 +468,7 @@ fn on_loop_build(store: &StateStore, regime: &Regime) -> (Candidate, WorkMessage
         &DifficultyParams::mainnet(),
         &[],
         None,
+        None,
     )
     .expect("on-loop generate_candidate ok")
     .expect("on-loop candidate is Some")
@@ -600,6 +601,7 @@ fn generate_candidate_non_genesis_parent_without_interlinks_errors_without_panic
         &DifficultyParams::mainnet(),
         &[],
         None,
+        None,
     )
     .expect_err("non-genesis parent without interlinks must fail the build");
 
@@ -659,6 +661,7 @@ fn offloop_matches_onloop_under(regime: &Regime) {
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
         &[],
+        None,
         None,
     )
     .expect("off-loop generate_candidate ok")

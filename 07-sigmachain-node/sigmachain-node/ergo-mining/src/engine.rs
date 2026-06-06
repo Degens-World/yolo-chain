@@ -255,6 +255,7 @@ pub fn build_and_publish(
         handle.chain_config(),
         intent.eligible_rent_boxes.as_slice(),
         intent.genesis_emission_box.as_deref(),
+        handle.yolo_context(),
     )?;
     let Some((candidate, work)) = built else {
         return Ok(BuildOutcome::Raced);
