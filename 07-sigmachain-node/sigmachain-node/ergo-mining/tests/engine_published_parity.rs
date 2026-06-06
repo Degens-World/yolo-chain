@@ -428,6 +428,7 @@ fn handle(regime: &Regime) -> MiningHandle {
         MonetarySettings::mainnet(),
         regime.reemission.clone(),
         DifficultyParams::mainnet(),
+        ergo_chain_spec::VotingParams::mainnet(),
     )
 }
 
@@ -466,6 +467,7 @@ fn on_loop_build(store: &StateStore, regime: &Regime) -> (Candidate, WorkMessage
         &MonetarySettings::mainnet(),
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
+        &ergo_chain_spec::VotingParams::mainnet(),
         &[],
         None,
         None,
@@ -599,6 +601,7 @@ fn generate_candidate_non_genesis_parent_without_interlinks_errors_without_panic
         &MonetarySettings::mainnet(),
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
+        &ergo_chain_spec::VotingParams::mainnet(),
         &[],
         None,
         None,
@@ -660,6 +663,7 @@ fn offloop_matches_onloop_under(regime: &Regime) {
         &MonetarySettings::mainnet(),
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
+        &ergo_chain_spec::VotingParams::mainnet(),
         &[],
         None,
         None,

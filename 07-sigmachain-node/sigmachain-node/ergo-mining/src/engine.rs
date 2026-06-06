@@ -253,6 +253,7 @@ pub fn build_and_publish(
         handle.monetary(),
         handle.reemission_ref(),
         handle.chain_config(),
+        handle.voting_params(),
         intent.eligible_rent_boxes.as_slice(),
         intent.genesis_emission_box.as_deref(),
         handle.yolo_context(),
@@ -296,6 +297,7 @@ mod tests {
             MonetarySettings::mainnet(),
             Some(ReemissionSettings::mainnet()),
             DifficultyParams::mainnet(),
+            ergo_chain_spec::VotingParams::mainnet(),
         )
     }
 

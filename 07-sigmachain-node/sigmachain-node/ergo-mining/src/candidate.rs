@@ -47,7 +47,12 @@ use crate::coinbase::{build_fee_tx, build_pre_eip27_emission_tx};
 use crate::emission_box::lookup_emission_box_from_parent;
 use crate::emission_rules::MonetarySettings;
 use crate::error::MiningError;
-use crate::extension_builder::{build_candidate_extension_fields, is_epoch_boundary_mainnet};
+use crate::extension_builder::{
+    build_candidate_extension_fields, build_candidate_extension_fields_epoch_boundary,
+};
+use ergo_chain_spec::VotingParams;
+use ergo_validation::voting::recompute::compute_next_params;
+use ergo_validation::voting::validation_settings::ErgoValidationSettingsUpdate;
 use crate::reemission::{build_post_eip27_emission_tx, ReemissionSettings};
 use crate::state_view::CandidateStateView;
 use crate::storage_rent_claim::build_budget_bounded_rent_claim;
@@ -117,6 +122,7 @@ pub fn generate_candidate<V: CandidateStateView>(
     monetary: &MonetarySettings,
     reemission: Option<&ReemissionSettings>,
     chain_config: &DifficultyParams,
+    voting_settings: &VotingParams,
     eligible_rent_boxes: &[ErgoBox],
     genesis_emission_box: Option<&ErgoBox>,
     yolo_context: Option<&crate::handle::YoloEmissionContext>,
@@ -139,13 +145,13 @@ pub fn generate_candidate<V: CandidateStateView>(
     // `chain_config.initial_difficulty`), `version` (from active
     // params), and the placeholder Autolykos V2 solution.
     let is_genesis_bootstrap = parent_height == 0;
-
-    if is_epoch_boundary_mainnet(candidate_height) {
-        return Err(MiningError::InvalidConfig(format!(
-            "epoch-boundary candidate at h={candidate_height} not supported in v1 \
-             (proposed-update + validation-settings encoding deferred)"
-        )));
-    }
+    // Voting-epoch boundary triggers the encoded-parameter extension
+    // shape. SigmaChain testnet's voting_length is 6_144 (one per
+    // difficulty epoch); mainnet is 1_024. Genesis (parent_height == 0)
+    // is never a boundary in practice (the chain hasn't had an epoch
+    // to vote over yet), but the predicate keeps the dispatch readable.
+    let is_epoch_boundary = candidate_height > 0
+        && candidate_height.is_multiple_of(voting_settings.voting_length);
 
     // 2. Snapshot params + applied-chain window
     let (active_params, validation_settings) = view.tip_snapshot_params().map_err(state_err)?;
@@ -260,12 +266,36 @@ pub fn generate_candidate<V: CandidateStateView>(
         }
         unpacked
     };
-    let extension_fields = build_candidate_extension_fields(
-        &parent_header,
-        &parent_interlinks,
-        candidate_height,
-        crate::extension_builder::MAINNET_VOTING_LENGTH,
-    )?;
+    let extension_fields = if is_epoch_boundary {
+        // Recompute the next epoch's active parameters from the tip's
+        // current active set and the just-closed voting epoch's vote
+        // tally. SigmaChain's bundled CPU miner emits `votes = [0; 3]`
+        // on every header, so the tally is empty in practice; passing
+        // an empty `epoch_votes` slice short-circuits all vote-driven
+        // changes inside `compute_next_params`. Hardening the tally
+        // path against real (non-zero) miner votes is left to the
+        // first SigmaChain epoch that actually casts them.
+        let empty_votes: Vec<(i8, i32)> = Vec::new();
+        let empty_proposed_update = ErgoValidationSettingsUpdate::empty();
+        let (next_active, _activated_update) = compute_next_params(
+            &active_params,
+            &empty_votes,
+            false,
+            &empty_proposed_update,
+            candidate_height,
+            voting_settings,
+        )
+        .map_err(|e| MiningError::InvalidConfig(format!(
+            "compute_next_params at epoch boundary h={candidate_height}: {e:?}"
+        )))?;
+        build_candidate_extension_fields_epoch_boundary(
+            &parent_header,
+            &parent_interlinks,
+            &next_active,
+        )?
+    } else {
+        build_candidate_extension_fields(&parent_header, &parent_interlinks)?
+    };
 
     // 8. Coinbase: emission tx. Three regimes:
     //   - reemission = Some + height > activation_height: post-EIP-27,

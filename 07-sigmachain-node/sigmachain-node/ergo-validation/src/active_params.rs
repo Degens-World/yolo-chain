@@ -387,6 +387,76 @@ impl ActiveProtocolParameters {
         Ok(())
     }
 
+    /// Encode the active parameters as extension fields for an epoch-
+    /// start block — inverse of [`parse_active_params`].
+    ///
+    /// Mirrors Scala `Parameters.toExtensionCandidate` (the round-trip
+    /// counterpart of `Parameters.parseExtension` at
+    /// `settings/Parameters.scala:372-390`). Emits:
+    ///
+    /// * One numeric field per named parameter id (key
+    ///   `(SYSTEM_PARAMETERS_PREFIX, id)`, value 4-byte big-endian
+    ///   `i32`), for `STORAGE_FEE_FACTOR..OUTPUT_COST`, `BLOCK_VERSION`,
+    ///   plus `SUBBLOCKS_PER_BLOCK` when `subblocks_per_block` is set.
+    /// * One field per `extra` entry, same wire shape (covers the
+    ///   soft-fork voting keys 120-122 and any forward-compatible
+    ///   ids carried verbatim through `parse_active_params`).
+    /// * One `proposed_update` field at key
+    ///   `(SYSTEM_PARAMETERS_PREFIX, SOFT_FORK_DISABLING_RULES_ID)`,
+    ///   value is the serialized [`ErgoValidationSettingsUpdate`].
+    ///
+    /// Fields are emitted in ascending numeric-id order, with the
+    /// `proposed_update` last (id 124 is the largest used by Scala).
+    /// The extension-root merkle tree depends on field order, so the
+    /// deterministic order is consensus-bearing.
+    ///
+    /// `epoch_start_height` is NOT serialized into the extension — it
+    /// is implicit in the block's height at which the parser is
+    /// invoked.
+    pub fn encode_extension_fields(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        use crate::voting::validation_settings::write_validation_settings_update;
+        use ergo_primitives::writer::VlqWriter;
+
+        // Collect (id, value) pairs. Named ids first, then `extra`.
+        let mut pairs: Vec<(u8, i32)> = Vec::with_capacity(10 + self.extra.len());
+        pairs.push((ids::STORAGE_FEE_FACTOR, self.storage_fee_factor));
+        pairs.push((ids::MIN_VALUE_PER_BYTE, self.min_value_per_byte));
+        pairs.push((ids::MAX_BLOCK_SIZE, self.max_block_size));
+        pairs.push((ids::MAX_BLOCK_COST, self.max_block_cost));
+        pairs.push((ids::TOKEN_ACCESS_COST, self.token_access_cost));
+        pairs.push((ids::INPUT_COST, self.input_cost));
+        pairs.push((ids::DATA_INPUT_COST, self.data_input_cost));
+        pairs.push((ids::OUTPUT_COST, self.output_cost));
+        if let Some(sub) = self.subblocks_per_block {
+            pairs.push((ids::SUBBLOCKS_PER_BLOCK, sub));
+        }
+        pairs.push((ids::BLOCK_VERSION, self.block_version as i32));
+        for &(id, value) in &self.extra {
+            pairs.push((id, value));
+        }
+        pairs.sort_by_key(|&(id, _)| id);
+
+        let mut fields: Vec<(Vec<u8>, Vec<u8>)> = pairs
+            .into_iter()
+            .map(|(id, value)| {
+                let key = vec![SYSTEM_PARAMETERS_PREFIX, id];
+                let val = value.to_be_bytes().to_vec();
+                (key, val)
+            })
+            .collect();
+
+        // proposed_update at the tail. Id 124 is greater than every
+        // other reserved id, so this preserves the ascending order.
+        let mut update_writer = VlqWriter::new();
+        write_validation_settings_update(&mut update_writer, &self.proposed_update);
+        fields.push((
+            vec![SYSTEM_PARAMETERS_PREFIX, SOFT_FORK_DISABLING_RULES_ID],
+            update_writer.result(),
+        ));
+
+        fields
+    }
+
     /// Encode for storage. Returns an error if the type's invariant is
     /// violated (`extra` colliding with a reserved id, or duplicates in
     /// `extra`); see [`Self::validate`].
@@ -1066,5 +1136,116 @@ mod tests {
         assert!(m.proposed_update.status_updates.is_empty());
         assert_eq!(m.activated_update.rules_to_disable, Vec::<u16>::new());
         assert!(m.activated_update.status_updates.is_empty());
+    }
+
+    // ----- encode_extension_fields round-trip -----
+
+    /// Wrap a `Vec<(Vec<u8>, Vec<u8>)>` into an `Extension` for parsing.
+    /// Extension keys are fixed-width `[u8; 2]`; the encoder emits
+    /// 2-byte keys for parameter ids by construction.
+    fn ext_from_encoded(fields: Vec<(Vec<u8>, Vec<u8>)>) -> Extension {
+        Extension {
+            header_id: ModifierId::from_bytes([0u8; 32]),
+            fields: fields
+                .into_iter()
+                .map(|(k, v)| ExtensionField {
+                    key: [k[0], k[1]],
+                    value: v,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn encode_extension_fields_round_trips_required_only() {
+        // Parse the canonical required set, re-encode, parse again,
+        // assert structural equality. activated_update is set by
+        // `compute_next_params`, never by the parser, so it stays
+        // empty on both sides.
+        let original = parse_active_params(&ext_with(full_required_set()), 1024).unwrap();
+        let encoded = original.encode_extension_fields();
+        let re_parsed = parse_active_params(&ext_from_encoded(encoded), 1024).unwrap();
+        assert_eq!(original, re_parsed);
+    }
+
+    #[test]
+    fn encode_extension_fields_round_trips_with_subblocks() {
+        let mut fields = full_required_set();
+        fields.push(([0x00, 9], be_i32(30)));
+        let original = parse_active_params(&ext_with(fields), 1_772_544).unwrap();
+        let encoded = original.encode_extension_fields();
+        let re_parsed = parse_active_params(&ext_from_encoded(encoded), 1_772_544).unwrap();
+        assert_eq!(original, re_parsed);
+        assert_eq!(re_parsed.subblocks_per_block, Some(30));
+    }
+
+    #[test]
+    fn encode_extension_fields_round_trips_with_extra_softfork_keys() {
+        let mut fields = full_required_set();
+        fields.push(([0x00, 120], be_i32(7)));
+        fields.push(([0x00, 121], be_i32(42)));
+        fields.push(([0x00, 122], be_i32(2048)));
+        let original = parse_active_params(&ext_with(fields), 1024).unwrap();
+        let encoded = original.encode_extension_fields();
+        let re_parsed = parse_active_params(&ext_from_encoded(encoded), 1024).unwrap();
+        assert_eq!(original, re_parsed);
+    }
+
+    #[test]
+    fn encode_extension_fields_round_trips_with_proposed_update() {
+        let mut fields = full_required_set();
+        let update = crate::voting::validation_settings::ErgoValidationSettingsUpdate {
+            rules_to_disable: vec![409, 410],
+            status_updates: vec![],
+        };
+        fields.push(([0x00, 124], update.serialize()));
+        let original = parse_active_params(&ext_with(fields), 1024).unwrap();
+        let encoded = original.encode_extension_fields();
+        let re_parsed = parse_active_params(&ext_from_encoded(encoded), 1024).unwrap();
+        assert_eq!(original, re_parsed);
+        assert_eq!(re_parsed.proposed_update.rules_to_disable, vec![409, 410]);
+    }
+
+    #[test]
+    fn encode_extension_fields_emits_ascending_key_order() {
+        // The extension root merkle tree depends on field order, so
+        // the encoder's emission order is consensus-bearing. Verify
+        // numeric ids ascend and `(0x00, 124)` is last.
+        let original = parse_active_params(&ext_with(full_required_set()), 1024).unwrap();
+        let encoded = original.encode_extension_fields();
+        for window in encoded.windows(2) {
+            assert!(
+                window[0].0 < window[1].0,
+                "encoded fields must be in ascending key order: {:?} >= {:?}",
+                window[0].0,
+                window[1].0,
+            );
+        }
+        assert_eq!(
+            encoded.last().unwrap().0,
+            vec![SYSTEM_PARAMETERS_PREFIX, SOFT_FORK_DISABLING_RULES_ID],
+            "proposed_update (id 124) must be the final field"
+        );
+    }
+
+    #[test]
+    fn encode_extension_fields_proposed_update_field_value_matches_writer() {
+        // The proposed_update field's value bytes must equal what
+        // ErgoValidationSettingsUpdate::serialize() produces directly,
+        // since the parser uses the same deserializer to round-trip.
+        let mut fields = full_required_set();
+        let update = crate::voting::validation_settings::ErgoValidationSettingsUpdate {
+            rules_to_disable: vec![409],
+            status_updates: vec![],
+        };
+        let expected_bytes = update.serialize();
+        fields.push(([0x00, 124], expected_bytes.clone()));
+        let original = parse_active_params(&ext_with(fields), 1024).unwrap();
+        let encoded = original.encode_extension_fields();
+        let proposed_field = encoded
+            .iter()
+            .find(|(k, _)| k == &vec![SYSTEM_PARAMETERS_PREFIX, SOFT_FORK_DISABLING_RULES_ID])
+            .unwrap();
+        assert_eq!(proposed_field.1, expected_bytes);
     }
 }

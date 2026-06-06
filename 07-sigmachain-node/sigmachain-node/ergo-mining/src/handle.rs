@@ -32,7 +32,7 @@ use crate::error::MiningError;
 use crate::reemission::ReemissionSettings;
 use crate::solution::{verify_solution, SolutionOutcome};
 use crate::work_message::{MinerSolution, WorkMessage};
-use ergo_chain_spec::YoloEmissionParams;
+use ergo_chain_spec::{VotingParams, YoloEmissionParams};
 
 /// Upper bound on templates retained in the [`MiningCache`] ring — the number
 /// of recently-published templates whose in-flight solutions can still be
@@ -125,6 +125,11 @@ pub struct MiningHandle {
     /// the reemission tx path and builds a pre-EIP-27 emission tx.
     reemission: Option<Arc<ReemissionSettings>>,
     chain_config: Arc<DifficultyParams>,
+    /// Voting-epoch cadence + soft-fork window sizes (Scala
+    /// `chain.voting.*`). The candidate builder reads `voting_length`
+    /// to decide whether the candidate is an epoch-start block and, if
+    /// so, passes the whole struct into `compute_next_params`.
+    voting_params: Arc<VotingParams>,
     /// Whether to sweep storage-rent-eligible boxes into a pinned zero-fee
     /// self-claim. Off by default; set via [`MiningHandle::with_rent_config`].
     claim_storage_rent: bool,
@@ -148,12 +153,14 @@ impl MiningHandle {
         monetary: MonetarySettings,
         reemission: Option<ReemissionSettings>,
         chain_config: DifficultyParams,
+        voting_params: VotingParams,
     ) -> Self {
         Self::with_reward_key(
             RewardKeySource::Pinned(miner_pk),
             monetary,
             reemission,
             chain_config,
+            voting_params,
         )
     }
 
@@ -165,6 +172,7 @@ impl MiningHandle {
         monetary: MonetarySettings,
         reemission: Option<ReemissionSettings>,
         chain_config: DifficultyParams,
+        voting_params: VotingParams,
     ) -> Self {
         Self {
             cache: Arc::new(RwLock::new(MiningCache::default())),
@@ -173,6 +181,7 @@ impl MiningHandle {
             monetary: Arc::new(monetary),
             reemission: reemission.map(Arc::new),
             chain_config: Arc::new(chain_config),
+            voting_params: Arc::new(voting_params),
             claim_storage_rent: false,
             max_storage_rent_claims: 0,
             yolo_context: None,
@@ -403,6 +412,7 @@ impl MiningHandle {
             MonetarySettings::mainnet(),
             Some(ReemissionSettings::mainnet()),
             DifficultyParams::mainnet(),
+            VotingParams::mainnet(),
         )
     }
 
@@ -464,6 +474,15 @@ impl MiningHandle {
     /// EIP-37 / 1024-block epochs, testnet uses 128-block epochs).
     pub fn chain_config(&self) -> &ergo_crypto::difficulty::DifficultyParams {
         &self.chain_config
+    }
+
+    /// Voting-epoch cadence + soft-fork window sizes the handle was
+    /// built with. Forwarded to `generate_candidate` so the epoch-
+    /// boundary predicate uses the network's actual `voting_length`
+    /// (mainnet 1024, SigmaChain testnet 6144) and so
+    /// `compute_next_params` runs against the right thresholds.
+    pub fn voting_params(&self) -> &VotingParams {
+        &self.voting_params
     }
 
     /// Resolve the reward pubkey as hex against current state. Unlike the old
@@ -607,6 +626,7 @@ mod tests {
             MonetarySettings::mainnet(),
             Some(ReemissionSettings::mainnet()),
             DifficultyParams::mainnet(),
+            VotingParams::mainnet(),
         );
         assert_eq!(h.reward_key, RewardKeySource::Wallet);
     }
