@@ -19,8 +19,36 @@ impl BoxSelector for DefaultBoxSelector {
         target: &SelectionTarget,
     ) -> Result<SelectionResult, WalletError> {
         // Sort by value DESC (greedy pick largest first — minimises input count).
+        // BUT: when the target demands specific tokens, scan token-bearing
+        // candidates first, then top up with ERG-only candidates. Without the
+        // token-priority pass, a wallet with thousands of small ERG-only boxes
+        // (e.g. mining-reward UTXO) would consume every one of them before
+        // discovering the small box that holds the required token, blowing the
+        // tx init-cost cap (`compute_tx_init_cost`: input_cost * n_inputs).
         let mut sorted: Vec<&BoxSummary> = candidates.iter().collect();
-        sorted.sort_by_key(|b| Reverse(b.value));
+        if !target.tokens.is_empty() {
+            // Stable partial order: candidates carrying any required token
+            // first, then by ERG value descending. The greedy scan below
+            // covers required tokens with the smallest number of inputs,
+            // then keeps adding ERG-rich boxes only as needed.
+            sorted.sort_by(|a, b| {
+                let a_has = a
+                    .tokens
+                    .iter()
+                    .any(|(id, _)| target.tokens.contains_key(id));
+                let b_has = b
+                    .tokens
+                    .iter()
+                    .any(|(id, _)| target.tokens.contains_key(id));
+                match (a_has, b_has) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => b.value.cmp(&a.value),
+                }
+            });
+        } else {
+            sorted.sort_by_key(|b| Reverse(b.value));
+        }
 
         let mut selected_ids: Vec<[u8; 32]> = Vec::new();
         let mut total_erg: u64 = 0;

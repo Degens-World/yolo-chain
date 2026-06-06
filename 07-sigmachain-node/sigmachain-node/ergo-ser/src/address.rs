@@ -259,6 +259,39 @@ pub fn decode_address_content_bytes(
     }
 }
 
+/// Decode an address to `ErgoTree` bytes regardless of which network
+/// the address belongs to. Reads the network nibble from the header
+/// byte and forwards to [`decode_address_to_tree_bytes`].
+///
+/// Used by the wallet's send paths where the operator may construct
+/// payments to either P2PK or P2S addresses without telling the
+/// wallet which network they belong to. The wallet still enforces a
+/// network match on its OWN derived addresses (change, tracked pubkeys)
+/// via the configured `NetworkPrefix`.
+pub fn decode_address_to_tree_bytes_any_network(
+    s: &str,
+) -> Result<Vec<u8>, AddressDecodeError> {
+    let raw = bs58::decode(s)
+        .into_vec()
+        .map_err(|e| AddressDecodeError::Base58(e.to_string()))?;
+    if raw.is_empty() {
+        return Err(AddressDecodeError::TooShort(0));
+    }
+    let net_nibble = raw[0] & 0xF0;
+    let network = match net_nibble {
+        0x00 => NetworkPrefix::Mainnet,
+        0x10 => NetworkPrefix::Testnet,
+        0x20 => NetworkPrefix::SigmaChainTestnet,
+        other => {
+            return Err(AddressDecodeError::NetworkMismatch {
+                expected: NetworkPrefix::Mainnet,
+                actual: other,
+            });
+        }
+    };
+    decode_address_to_tree_bytes(s, network)
+}
+
 /// Decode a P2PK address string and return the 33-byte compressed
 /// pubkey embedded in it. Returns an error if the address is not
 /// a valid P2PK address (wrong type byte, bad checksum, etc.).

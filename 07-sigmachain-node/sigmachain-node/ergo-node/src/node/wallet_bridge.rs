@@ -917,19 +917,20 @@ async fn build_unsigned_tx(
 ) -> Result<Vec<u8>, WalletAdminError> {
     let state = state.read();
 
-    // Decode payment requests: address → pubkey → ErgoTree bytes.
+    // Decode payment requests: address → ErgoTree bytes. Accepts both
+    // P2PK (turns the embedded pubkey into the canonical non-segregated
+    // P2PK ErgoTree) and P2S (the address content IS the verbatim
+    // ErgoTree). The wallet's own change/tracked addresses are always
+    // P2PK; the P2S path matters for outputs that pay into contract
+    // boxes (governance vault/reserve, dApp scripts, etc.).
     let payment_reqs: Vec<ergo_wallet::tx_builder::PaymentRequest> = requests
         .iter()
         .map(|r| {
-            let pubkey = ergo_ser::address::decode_p2pk_address(&r.address)
-                .map_err(|_| WalletAdminError::Internal(format!("bad address: {}", r.address)))?;
-            // Canonical (non-segregated) P2PK tree — matches Scala
-            // ErgoAddressEncoder and the wallet's own tracked_p2pk_trees.
-            // The segregated build_prove_dlog_ergo_tree would emit a P2S
-            // shape that recipients' wallets render as the wrong address
-            // and that our own scan would not recognize as change.
-            let to_ergo_tree = ergo_ser::address::build_p2pk_tree_bytes(&pubkey)
-                .map_err(|e| WalletAdminError::Internal(format!("recipient p2pk tree: {e:?}")))?;
+            let to_ergo_tree =
+                ergo_ser::address::decode_address_to_tree_bytes_any_network(&r.address)
+                    .map_err(|e| {
+                        WalletAdminError::Internal(format!("bad address {}: {e:?}", r.address))
+                    })?;
             let assets: BTreeMap<[u8; 32], u64> = r
                 .assets
                 .iter()
@@ -1047,10 +1048,21 @@ async fn build_unsigned_tx(
             )));
         }
 
+        // The first input's box id can serve as the id of one newly
+        // minted token (Scala `ErgoTransaction.checkAssetsPreservation`
+        // / `tx::monetary::validate_monetary`: a non-input token id
+        // is accepted only when it equals `INPUTS(0).id`). Skip the
+        // coverage check for that single id so the caller can include
+        // `assets[i] = (input[0].box_id, mint_amount)` in a
+        // PaymentRequest and have the resulting output box carry the
+        // freshly-minted token.
+        let mint_token_id: Option<[u8; 32]> = inputs.first().map(|i| *i.box_id.as_bytes());
+
         // Verify token coverage.
         for (token_id, &required_amt) in &required_tokens {
             let available = input_tokens_total.get(token_id).copied().unwrap_or(0);
-            if available < required_amt {
+            let is_mint = mint_token_id.as_ref() == Some(token_id);
+            if available < required_amt && !is_mint {
                 return Err(WalletAdminError::Internal(format!(
                     "override-inputs insufficient token {}: have {available}, need {required_amt}",
                     hex::encode(token_id)

@@ -87,23 +87,18 @@ impl Prover {
             )));
         }
 
-        // Script gate: reject unsupported script families before
-        // reaching the (synthetic-context) self-verify.
-        for (idx, input_box) in boxes_to_spend.iter().enumerate() {
-            let ergo_tree = input_box.candidate.ergo_tree();
-            let is_trivially_reducible = ergo_sigma::reduce::trivial_reduce(ergo_tree).is_ok();
-            let is_miner_reward = ergo_state::wallet::miner_reward::extract_miner_reward_pubkey(
-                input_box.candidate.ergo_tree_bytes(),
-            )
-            .is_some();
-            if !is_trivially_reducible && !is_miner_reward {
-                return Err(WalletError::TxBuild(format!(
-                    "input {idx} has an unsupported script family; \
-                     only bare ProveDlog/ProveDHTuple and matured miner-reward \
-                     boxes are currently spendable"
-                )));
-            }
-        }
+        // (Phase 5.4.3) The previous version of this gate rejected any
+        // script that isn't bare ProveDlog / ProveDHTuple / matured
+        // miner-reward, on the assumption that the self-verify path
+        // ran with a synthetic context. The signing loop below now
+        // builds a real reduction context (`build_reduction_owned`)
+        // and the evaluator fall-through handles arbitrary scripts
+        // whose `sigmaProp(...)` reduces to a trivial proof given the
+        // tx's inputs / outputs / extensions. Removing the gate lets
+        // the wallet sign txs that consume YoloDAO contract boxes
+        // (vault / reserve / treasury / counter etc.) alongside a
+        // wallet-owned funding input. The validator's per-input
+        // verify still gates everything on chain.
 
         let message = self.bytes_to_sign_for_tx(unsigned_tx)?;
 
