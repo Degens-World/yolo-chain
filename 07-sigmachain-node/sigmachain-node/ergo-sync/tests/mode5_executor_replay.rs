@@ -60,6 +60,7 @@ use ergo_ser::modifier_id::{
 };
 use ergo_state::chain::{ChainStateMeta, HeaderAvailability, HeaderMeta};
 use ergo_state::{ChainStateRead, DigestStateStore, HeaderSectionStore, StateBackendKind};
+use ergo_chain_spec::Network;
 use ergo_sync::block_proc::process_block;
 use ergo_validation::active_params::ActiveProtocolParameters;
 use ergo_validation::context::ProtocolParams;
@@ -372,6 +373,7 @@ fn mode5_executor_replay_reproduces_mainnet_state_roots() {
             &mut backend,
             &row.header_id,
             &params,
+            Network::Mainnet,
             Some(&last_headers),
             None,
             None,
@@ -439,6 +441,7 @@ fn process_first_applied(
         backend,
         &row.header_id,
         &params,
+        Network::Mainnet,
         Some(&last_headers),
         None,
         None,

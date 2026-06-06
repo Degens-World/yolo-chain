@@ -643,6 +643,7 @@ async fn run_inner_with_backend(
         ergo_validation::context::ProtocolParams::mainnet_default(),
         config.chain_spec.difficulty.clone(),
     );
+    executor.set_network(config.network);
     executor.set_script_validation_checkpoint(config.script_validation_checkpoint);
     if let Some((h, id)) = config.script_validation_checkpoint {
         info!(

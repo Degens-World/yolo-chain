@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use tracing::debug;
 
+use ergo_chain_spec::Network;
 use ergo_primitives::digest::blake2b256;
 use ergo_primitives::reader::VlqReader;
 use ergo_ser::ad_proofs::read_ad_proofs;
@@ -293,6 +294,7 @@ pub fn process_block(
     store: &mut ergo_state::StateBackendKind,
     header_id: &[u8; 32],
     params: &ProtocolParams,
+    network: Network,
     cached_last_headers: Option<&[CheckedHeader]>,
     script_validation_checkpoint: Option<(u32, [u8; 32])>,
     perf: Option<&BlockPerfCounters>,
@@ -303,6 +305,7 @@ pub fn process_block(
             s,
             header_id,
             params,
+            network,
             cached_last_headers,
             script_validation_checkpoint,
             perf,
@@ -311,6 +314,7 @@ pub fn process_block(
         ergo_state::StateBackendKind::Digest(d) => process_block_digest(
             d,
             header_id,
+            network,
             cached_last_headers,
             script_validation_checkpoint,
             perf,
@@ -328,6 +332,7 @@ fn process_block_utxo(
     _params: &ProtocolParams, // legacy arg; ignored — params are now sourced from
     // `store.active_params()`. Kept in the signature to avoid
     // an executor.rs callsite churn; will drop in a follow-up.
+    network: Network,
     cached_last_headers: Option<&[CheckedHeader]>,
     script_validation_checkpoint: Option<(u32, [u8; 32])>,
     perf: Option<&BlockPerfCounters>,
@@ -556,12 +561,11 @@ fn process_block_utxo(
         soft_fork_state,
         last_headers,
         script_validation_checkpoint,
-        // SigmaChain miner-only storage rent rule. Disabled here
-        // because this block-processor is the Ergo path; the
-        // SigmaChain node sets this `true` when the chain-spec
-        // is `Network::SigmaChainTestnet`. Plumbed via a separate
-        // network-aware constructor in a later phase.
-        enforce_miner_only_storage_rent: false,
+        // SigmaChain miner-only storage rent rule: only the block's
+        // miner (via the coinbase tx at index 0) may sweep
+        // rent-eligible boxes. Ergo paths leave this `false` so
+        // anyone can collect rent (byte-parity with upstream).
+        enforce_miner_only_storage_rent: matches!(network, Network::SigmaChainTestnet),
     };
 
     // 8. Validate the full block (no PoW/difficulty — already validated by header pipeline)
@@ -662,6 +666,7 @@ fn process_block_utxo(
 fn process_block_digest(
     store: &mut DigestStateStore,
     header_id: &[u8; 32],
+    network: Network,
     cached_last_headers: Option<&[CheckedHeader]>,
     script_validation_checkpoint: Option<(u32, [u8; 32])>,
     perf: Option<&BlockPerfCounters>,
@@ -1042,9 +1047,8 @@ fn process_block_digest(
         last_headers,
         script_validation_checkpoint,
         // SigmaChain miner-only storage rent rule — see the sibling
-        // ctx construction above for context. Disabled here (Ergo
-        // path).
-        enforce_miner_only_storage_rent: false,
+        // ctx construction above for context.
+        enforce_miner_only_storage_rent: matches!(network, Network::SigmaChainTestnet),
     };
 
     let t0 = Instant::now();

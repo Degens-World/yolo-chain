@@ -1,0 +1,62 @@
+# SigmaChain testnet — single-node config. Run with:
+#
+#   ergo-node --config sigmachain-testnet.toml
+#
+# This is a fresh-chain config for the YOLO fork: 20-second blocks,
+# YOLO emission curve, miner-only storage rent. The bundled seed-peers
+# list is empty at testnet bring-up, so set `peers.known` to your
+# co-operators' addresses or run a one-node network.
+#
+# Every knob accepted by ergo-node.toml is accepted here too; what
+# changes is the network identifier and the per-network defaults that
+# kick in once `Network::SigmaChainTestnet` is resolved at startup.
+
+network  = "sigmachain-testnet"
+# data_dir = "./sigmachain-data"   # uncomment to point at a dedicated dir;
+                                   # defaults to ./ergo-data which collides with
+                                   # any Ergo state already there.
+
+[node]
+agent_name = "sigmachain-rust"
+node_name  = "sigmachain-rust-node"
+# Full archival is the default and needs no knobs: state_type = "utxo",
+# verify_transactions = true, blocks_to_keep = -1.
+
+[peers]
+target_outbound = 8
+max_connections = 16
+# Single-node bring-up: list at least one peer (yourself counts) so the
+# config-loader doesn't bail with "no peers configured". Replace with
+# real testnet addresses once any are known.
+known = ["127.0.0.1:9040"]
+
+[api]
+bind = "127.0.0.1:9054"            # loopback only. YOLO ports are 9040 (P2P)
+                                   # / 9054 (REST), chosen so they don't collide
+                                   # with Ergo mainnet (9020/9052) or testnet
+                                   # (9030/9053) if both run on the same host.
+
+[api.security]
+# REQUIRED. Lowercase Blake2b-256 of your operator secret. The placeholder
+# below is blake2b256("hello") — replace it before exposing the API.
+# Generate your own:  printf 'your-secret' | b2sum -l 256
+api_key_hash = "324dcf027dd4a30a932c441f365a25e86b173defa4b8e58948253471b81b72cf"
+
+[indexer]
+enabled = true                     # /blockchain/* extra-index. Required by
+                                   # external miners that drive storage-rent
+                                   # claims off the unspent-by-height table.
+
+[mining]
+enabled = false                    # external-miner API. Flip to `true` and set
+                                   # `miner_public_key_hex` once a YOLO miner
+                                   # wallet is generated.
+
+[logging]
+default_level = "info"
+
+[logging.file]
+dir       = "."
+prefix    = "sigmachain-node"
+rotation  = "daily"
+max_files = 14

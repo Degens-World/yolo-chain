@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::time::Instant;
 
 use crate::coordinator::{Action, ChainView, SyncCoordinator};
+use ergo_chain_spec::Network;
 use ergo_crypto::difficulty::DifficultyParams;
 use ergo_p2p::peer::{PeerId, Penalty};
 use ergo_p2p::peer_manager::PeerManager;
@@ -169,6 +170,12 @@ type OrphanHeaderEntry = (PeerId, header_proc::PreValidatedHeader, Vec<u8>);
 pub struct SyncExecutor {
     params: ProtocolParams,
     chain_config: DifficultyParams,
+    /// Active network. Drives consensus-rule discriminators that the
+    /// per-block validation context needs (e.g. SigmaChain's miner-only
+    /// storage-rent rule). Defaults to `Network::Mainnet` on
+    /// `SyncExecutor::new`; the node-boot path overrides it via
+    /// `set_network` once the config-derived `ChainSpec` is in hand.
+    network: Network,
     /// Recent validated headers + raw bytes (newest first, max 50).
     /// Header-tip aligned. Used for SyncInfo V2 payload cache.
     last_headers: VecDeque<(CheckedHeader, Vec<u8>)>,
@@ -293,6 +300,7 @@ impl SyncExecutor {
         Self {
             params,
             chain_config,
+            network: Network::Mainnet,
             last_headers: VecDeque::with_capacity(LAST_HEADERS_WINDOW),
             block_context_headers: Vec::with_capacity(10),
             recently_installed: HashSet::new(),
@@ -311,6 +319,14 @@ impl SyncExecutor {
     /// exactly `height` is asserted against `block_id` (mismatch is fatal).
     pub fn set_script_validation_checkpoint(&mut self, ckpt: Option<(u32, [u8; 32])>) {
         self.script_validation_checkpoint = ckpt;
+    }
+
+    /// Set the active network. The node-boot path calls this once the
+    /// config-derived `ChainSpec` is in hand so the per-block validation
+    /// context picks up network-discriminated consensus rules — currently
+    /// the SigmaChain miner-only storage-rent flag.
+    pub fn set_network(&mut self, network: Network) {
+        self.network = network;
     }
 
     /// Whether `recover_coordinator` has run to completion (actually walked
@@ -1016,6 +1032,7 @@ impl SyncExecutor {
             store,
             header_id,
             &self.params,
+            self.network,
             cache,
             self.script_validation_checkpoint,
             Some(&self.block_perf),
@@ -1251,6 +1268,7 @@ impl SyncExecutor {
                 store,
                 &header_id,
                 &self.params,
+                self.network,
                 cache,
                 self.script_validation_checkpoint,
                 Some(&self.block_perf),
