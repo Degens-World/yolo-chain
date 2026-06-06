@@ -119,7 +119,10 @@ impl Validator for ErgoValidator {
             false, // scripts on
             cx,
         )
-        .map_err(map_validation_error)?;
+        .map_err(|e| {
+            tracing::warn!(target: "ergo_mempool::validator", error = ?e, "validate_transaction_parsed rejected tx");
+            map_validation_error(e)
+        })?;
 
         // Fee: sum of output values whose proposition matches the
         // mainnet miner-fee ErgoTree. In Ergo, fees are paid AS an

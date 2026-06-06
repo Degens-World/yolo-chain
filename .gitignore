@@ -25,3 +25,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Secrets / local env (Phase 5.4: live-node test credentials).
+# Never commit a populated .env — only .env.example with placeholders.
+.env
+.env.local
+*.env.local
+06-governance/node-tests/.env

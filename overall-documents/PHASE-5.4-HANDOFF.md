@@ -264,6 +264,48 @@ The minimum bar to call Phase 5.4 complete:
 
 ---
 
+## Before SigmaChain goes live (must-fix punch list)
+
+These are bring-up shortcuts taken during Phase 5.4 that are correct for the
+current operating mode (single CPU miner that always emits `votes=[0;3]`)
+but would silently miscompute or reject blocks if any non-zero votes are
+ever cast. All three live in [ergo-mining/src/candidate.rs](07-sigmachain-node/sigmachain-node/ergo-mining/src/candidate.rs)
+at the epoch-boundary `compute_next_params` call:
+
+1. **Vote tally is hardcoded `empty_votes: Vec<(i8, i32)>`.** A correct
+   implementation scans the prior voting-epoch's headers (6,144 of them on
+   SigmaChain testnet), reads each header's `votes: [u8; 3]` field, and
+   accumulates a `(param_id, count)` tally. The current code treats every
+   epoch as "no votes were cast," which is true only because our miner sets
+   all vote bytes to zero. If anyone — a different miner, a wallet
+   contributor — ever casts non-zero votes, the candidate would miscompute
+   the next-epoch active params and the resulting block would be rejected by
+   `exMatchParameters` (validation rule 409 in `ergo-validation::voting`).
+
+2. **`fork_vote: bool` is hardcoded `false`.** Same shape — a real
+   implementation reads the boundary block's own `votes[2]` (the soft-fork
+   slot) to decide whether THIS block is voting to start / continue a
+   soft-fork window. Hardcoded false means no soft-fork voting can ever
+   succeed.
+
+3. **`proposed_update: &ErgoValidationSettingsUpdate` is hardcoded
+   empty.** This is what the boundary block PROPOSES for the next voting
+   window's validation-settings update. We don't propose anything because
+   the chain has no mechanism yet to surface proposals. If you ever want to
+   propose a rule change, this needs operator plumbing.
+
+The encoder, builder, validator wiring, and `compute_next_params` itself
+are all complete and correct — only the three inputs above are stubbed.
+The fix is purely in the candidate-builder caller, not in the consensus or
+encoder paths. Estimate: ~1-2 hours including a header-scan oracle test
+against captured headers.
+
+**This must be fixed before any SigmaChain network is launched with
+multiple independent miners.** Until then, single-miner-zero-votes is a
+safe operating mode and Phase 5.4 testing requires nothing more.
+
+---
+
 ## Closing context
 
 Phase 5.3 burned ~6 hours of careful work cleaning up the bootstrap gates that the Phase 5 handoff didn't anticipate. The biggest lesson: when something doesn't work, the answer is usually "there's a network-aware branch missing" rather than "the design is wrong." Apply the same lens to Phase 5.4 — if a wallet or indexer path doesn't work, look for the SigmaChain edge case before assuming the API is broken.
