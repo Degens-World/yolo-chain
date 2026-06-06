@@ -446,6 +446,7 @@ fn build_intent(parent: [u8; 32], parent_height: u32) -> BuildIntent {
         eligible_rent_boxes: Arc::new(Vec::new()),
         reason: BuildReason::Startup,
         sigmachain_bootstrap: false,
+        genesis_emission_box: None,
     }
 }
 
@@ -466,6 +467,7 @@ fn on_loop_build(store: &StateStore, regime: &Regime) -> (Candidate, WorkMessage
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
         &[],
+        None,
     )
     .expect("on-loop generate_candidate ok")
     .expect("on-loop candidate is Some")
@@ -597,6 +599,7 @@ fn generate_candidate_non_genesis_parent_without_interlinks_errors_without_panic
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
         &[],
+        None,
     )
     .expect_err("non-genesis parent without interlinks must fail the build");
 
@@ -656,6 +659,7 @@ fn offloop_matches_onloop_under(regime: &Regime) {
         regime.reemission.as_ref(),
         &DifficultyParams::mainnet(),
         &[],
+        None,
     )
     .expect("off-loop generate_candidate ok")
     .expect("off-loop candidate is Some");

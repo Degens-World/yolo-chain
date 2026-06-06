@@ -795,8 +795,10 @@ impl StateStore {
         self.genesis_committed
     }
 
-    /// Get the current root digest.
-    pub fn root_digest(&mut self) -> ADDigest {
+    /// Get the current root digest. `&self`: the underlying
+    /// `AvlTree::root_digest` reads the cached `root_label` field
+    /// (O(1), no arena traversal, no mutation).
+    pub fn root_digest(&self) -> ADDigest {
         self.tree.root_digest()
     }
 

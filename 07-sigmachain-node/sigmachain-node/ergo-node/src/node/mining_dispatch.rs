@@ -313,6 +313,20 @@ pub(super) fn signal_mining_engine(
         Vec::new()
     };
     let mempool = ergo_mempool::MempoolReadSnapshot::from_pool(&state.mempool);
+    let is_sigmachain = matches!(
+        state.executor.network(),
+        ergo_chain_spec::Network::SigmaChainTestnet
+    );
+    // At SigmaChain genesis (height 0, no block 1 yet) the candidate
+    // builder cannot find a prior block's emission box. Parse the
+    // genesis emission box from the embedded chain-spec JSON and pass
+    // it through the intent; for every other tip state it stays None
+    // and the builder uses its normal parent-block lookup.
+    let genesis_emission_box = if is_sigmachain && now.best_full_height == 0 {
+        Some(Arc::new(crate::genesis::sigmachain_testnet_genesis_emission_box()))
+    } else {
+        None
+    };
     let intent = BuildIntent {
         expected_parent: now.best_full_id,
         expected_height: now.best_full_height,
@@ -320,10 +334,8 @@ pub(super) fn signal_mining_engine(
         miner_pk,
         eligible_rent_boxes: Arc::new(eligible_rent_boxes),
         reason,
-        sigmachain_bootstrap: matches!(
-            state.executor.network(),
-            ergo_chain_spec::Network::SigmaChainTestnet
-        ),
+        sigmachain_bootstrap: is_sigmachain,
+        genesis_emission_box,
     };
     // `watch::send` replaces the prior value (latest-wins); Err only if the
     // engine task receiver is gone (benign during shutdown).

@@ -44,6 +44,12 @@ pub trait CandidateStateView: UtxoView {
     fn best_full_block_id(&self) -> [u8; 32];
     /// Height of the best fully-applied block.
     fn best_full_block_height(&self) -> u32;
+    /// Committed AVL+ state root at the current tip (33 bytes:
+    /// 32-byte digest + 1-byte tree-height marker). At genesis this
+    /// is the state root after applying the genesis boxes; the
+    /// SigmaChain bootstrap path uses it as `last_block_utxo_root`
+    /// for block 1 in lieu of a parent header.
+    fn state_root(&self) -> ADDigest;
     /// Raw serialized header bytes by id (`None` if absent).
     fn get_header_bytes(&self, id: &[u8; 32]) -> Result<Option<Vec<u8>>, StateError>;
     /// Canonical header-chain id at `height` (`None` if absent).
@@ -74,6 +80,9 @@ impl CandidateStateView for StateStore {
     }
     fn best_full_block_height(&self) -> u32 {
         StateStore::chain_state(self).best_full_block_height
+    }
+    fn state_root(&self) -> ADDigest {
+        StateStore::root_digest(self)
     }
     fn get_header_bytes(&self, id: &[u8; 32]) -> Result<Option<Vec<u8>>, StateError> {
         StateStore::get_header(self, id)
@@ -107,6 +116,9 @@ impl CandidateStateView for CommittedSnapshot {
     }
     fn best_full_block_height(&self) -> u32 {
         CommittedSnapshot::best_full_block_height(self)
+    }
+    fn state_root(&self) -> ADDigest {
+        CommittedSnapshot::state_root(self)
     }
     fn get_header_bytes(&self, id: &[u8; 32]) -> Result<Option<Vec<u8>>, StateError> {
         CommittedSnapshot::get_header_bytes(self, id)

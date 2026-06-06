@@ -86,6 +86,25 @@ fn parse_genesis_boxes(json: &str) -> Vec<([u8; 32], Vec<u8>)> {
         .collect()
 }
 
+/// Parse the SigmaChain testnet genesis boxes as runtime [`ErgoBox`]
+/// values rather than `(id, serialized_bytes)` pairs. SigmaChain has a
+/// single genesis box (the emission box); this helper returns it
+/// directly so callers driving the genesis-bootstrap candidate path
+/// (`generate_candidate` at `parent_height == 0`) can hand the box to
+/// `build_pre_eip27_emission_tx`. Panics on JSON malformation —
+/// matching the embedded-JSON contract of `parse_genesis_boxes`.
+pub fn sigmachain_testnet_genesis_emission_box() -> ErgoBox {
+    let json = include_str!("../../test-vectors/sigmachain-testnet/genesis_boxes.json");
+    let boxes: Vec<GenesisBoxJson> = serde_json::from_str(json)
+        .expect("failed to parse sigmachain-testnet genesis boxes JSON");
+    assert_eq!(
+        boxes.len(),
+        1,
+        "sigmachain-testnet must have exactly 1 genesis box (the emission box)"
+    );
+    parse_one_box(&boxes[0])
+}
+
 fn parse_one_box(json: &GenesisBoxJson) -> ErgoBox {
     let tree_bytes = hex::decode(&json.ergo_tree).unwrap();
     let mut r = VlqReader::new(&tree_bytes);

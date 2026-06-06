@@ -118,6 +118,7 @@ pub fn generate_candidate<V: CandidateStateView>(
     reemission: Option<&ReemissionSettings>,
     chain_config: &DifficultyParams,
     eligible_rent_boxes: &[ErgoBox],
+    genesis_emission_box: Option<&ErgoBox>,
 ) -> Result<Option<(Candidate, WorkMessage)>, MiningError> {
     // 1. Tip + parent header (all reads via one committed view — see
     //    `CandidateStateView`; the snapshot impl sources them from a single
@@ -125,6 +126,18 @@ pub fn generate_candidate<V: CandidateStateView>(
     let parent_id: [u8; 32] = view.best_full_block_id();
     let parent_height = view.best_full_block_height();
     let candidate_height = parent_height + 1;
+    // SigmaChain genesis bootstrap: at parent_height == 0 there is no
+    // parent block. Synthesize a deterministic pseudo-header from
+    // chain-spec values so the rest of the build flows normally; the
+    // synthesized header is never persisted, but its blake2b256 lands
+    // in block 1's interlinks extension (via `update_interlinks` ->
+    // `is_genesis` branch), so its byte recipe IS consensus-bearing.
+    // Recipe: zero everything except `state_root` (the genesis AVL+
+    // root from `view.state_root()` — equal to the chain-spec
+    // `GenesisParams::state_digest` pin), `n_bits` (encoded from
+    // `chain_config.initial_difficulty`), `version` (from active
+    // params), and the placeholder Autolykos V2 solution.
+    let is_genesis_bootstrap = parent_height == 0;
 
     if is_epoch_boundary_mainnet(candidate_height) {
         return Err(MiningError::InvalidConfig(format!(
@@ -133,17 +146,22 @@ pub fn generate_candidate<V: CandidateStateView>(
         )));
     }
 
-    let parent_header_bytes = view
-        .get_header_bytes(&parent_id)
-        .map_err(state_err)?
-        .ok_or_else(|| MiningError::StateRead {
-            op: "load_parent_header",
-            reason: format!(
-                "best_full_block_id {} not in HEADERS",
-                hex::encode(parent_id)
-            ),
-        })?;
-    let parent_header = {
+    // 2. Snapshot params + applied-chain window
+    let (active_params, validation_settings) = view.tip_snapshot_params().map_err(state_err)?;
+
+    let parent_header = if is_genesis_bootstrap {
+        synthesize_genesis_parent_header(view.state_root(), chain_config, &active_params)?
+    } else {
+        let parent_header_bytes = view
+            .get_header_bytes(&parent_id)
+            .map_err(state_err)?
+            .ok_or_else(|| MiningError::StateRead {
+                op: "load_parent_header",
+                reason: format!(
+                    "best_full_block_id {} not in HEADERS",
+                    hex::encode(parent_id)
+                ),
+            })?;
         let mut r = VlqReader::new(&parent_header_bytes);
         read_header(&mut r).map_err(|e| MiningError::Decode {
             op: "parent_header",
@@ -151,22 +169,38 @@ pub fn generate_candidate<V: CandidateStateView>(
         })?
     };
 
-    // 2. Snapshot params + applied-chain window
-    let (active_params, validation_settings) = view.tip_snapshot_params().map_err(state_err)?;
-    let last_headers = view.last_applied_chain_window_10().map_err(state_err)?;
+    // `last_headers` is `[Header; 10]` for `CONTEXT.headers` in script
+    // evaluation. At genesis bootstrap there are no prior blocks; fill
+    // with 10 copies of the synthesized pseudo-parent (the coinbase
+    // emission script does not reference `CONTEXT.headers`).
+    let last_headers = if is_genesis_bootstrap {
+        std::array::from_fn(|_| parent_header.clone())
+    } else {
+        view.last_applied_chain_window_10().map_err(state_err)?
+    };
 
-    // 3. Difficulty retarget (or parent's nBits when non-recalc)
-    let epoch_len = epoch_length_for_height(candidate_height, chain_config);
-    let needed_heights = previous_heights_for_recalculation(candidate_height, epoch_len);
-    let epoch_headers = load_epoch_headers(view, &needed_heights, &parent_header)?;
-    let new_n_bits = next_n_bits(candidate_height, &epoch_headers, chain_config).map_err(|e| {
-        MiningError::IdComputation {
-            op: "difficulty_retarget",
-            reason: e.to_string(),
-        }
-    })?;
+    // 3. Difficulty retarget (or parent's nBits when non-recalc). At
+    //    genesis bootstrap there are no epoch headers; the chain-spec
+    //    initial_difficulty IS the block-1 target.
+    let new_n_bits = if is_genesis_bootstrap {
+        ergo_ser::difficulty::encode_compact_bits(
+            &num_bigint::BigUint::from_bytes_be(&chain_config.initial_difficulty),
+        )
+    } else {
+        let epoch_len = epoch_length_for_height(candidate_height, chain_config);
+        let needed_heights = previous_heights_for_recalculation(candidate_height, epoch_len);
+        let epoch_headers = load_epoch_headers(view, &needed_heights, &parent_header)?;
+        next_n_bits(candidate_height, &epoch_headers, chain_config).map_err(|e| {
+            MiningError::IdComputation {
+                op: "difficulty_retarget",
+                reason: e.to_string(),
+            }
+        })?
+    };
 
-    // 4. Timestamp: clamped monotonic.
+    // 4. Timestamp: clamped monotonic. Synthesized parent has
+    //    timestamp = 0 so `parent_header.timestamp + 1 = 1` and
+    //    `now_ms` always wins at bootstrap.
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -195,19 +229,30 @@ pub fn generate_candidate<V: CandidateStateView>(
         last_block_utxo_root,
     };
 
-    // 7. Build extension fields (non-epoch path: interlinks-only).
-    let parent_extension_bytes = read_parent_extension_bytes(view, &parent_header)?;
-    let parent_interlinks = unpack_interlinks_from_extension(&parent_extension_bytes)?;
-    // A non-genesis parent must carry interlinks; an empty set means its stored
-    // extension is malformed or missing them. Fail the build with a typed error
-    // here rather than panicking the engine task downstream (`update_interlinks`
-    // asserts a non-empty interlinks vector for a non-genesis header).
-    if *parent_header.parent_id.as_bytes() != [0u8; 32] && parent_interlinks.is_empty() {
-        return Err(MiningError::Decode {
-            op: "parent_interlinks",
-            reason: "non-genesis parent extension carries no interlinks fields".into(),
-        });
-    }
+    // 7. Build extension fields (non-epoch path: interlinks-only). At
+    //    genesis bootstrap there is no parent extension to read;
+    //    `update_interlinks` (called by `build_candidate_extension_fields`)
+    //    detects the genesis-parent case itself and returns
+    //    `vec![synthesized_parent_header_id]` without consulting the
+    //    `parent_interlinks` slice.
+    let parent_interlinks = if is_genesis_bootstrap {
+        Vec::new()
+    } else {
+        let parent_extension_bytes = read_parent_extension_bytes(view, &parent_header)?;
+        let unpacked = unpack_interlinks_from_extension(&parent_extension_bytes)?;
+        // A non-genesis parent must carry interlinks; an empty set means
+        // its stored extension is malformed or missing them. Fail the
+        // build with a typed error here rather than panicking the engine
+        // task downstream (`update_interlinks` asserts a non-empty
+        // interlinks vector for a non-genesis header).
+        if *parent_header.parent_id.as_bytes() != [0u8; 32] && unpacked.is_empty() {
+            return Err(MiningError::Decode {
+                op: "parent_interlinks",
+                reason: "non-genesis parent extension carries no interlinks fields".into(),
+            });
+        }
+        unpacked
+    };
     let extension_fields = build_candidate_extension_fields(
         &parent_header,
         &parent_interlinks,
@@ -224,7 +269,19 @@ pub fn generate_candidate<V: CandidateStateView>(
     //     practice now that mainnet is past activation).
     //   - reemission = None: network has no EIP-27 protocol (new
     //     public testnet); always pre-EIP-27 emission tx.
-    let emission_box = lookup_emission_box_from_parent(view, &parent_id, &parent_header)?;
+    //   At genesis bootstrap the caller supplies the box directly
+    //   (`genesis_emission_box`); the prior-block lookup has nothing to
+    //   read against.
+    let emission_box = if is_genesis_bootstrap {
+        genesis_emission_box.cloned().ok_or_else(|| {
+            MiningError::InvalidConfig(
+                "genesis_emission_box required when parent_height == 0 (SigmaChain bootstrap)"
+                    .to_string(),
+            )
+        })?
+    } else {
+        lookup_emission_box_from_parent(view, &parent_id, &parent_header)?
+    };
     let emission_tx = match reemission {
         Some(reem) if candidate_height > reem.activation_height => {
             build_post_eip27_emission_tx(&emission_box, miner_pk, candidate_height, monetary, reem)?
@@ -599,6 +656,56 @@ fn state_err(e: ergo_state::store::StateError) -> MiningError {
         op: "candidate_assembly",
         reason: format!("{e:?}"),
     }
+}
+
+/// Build a deterministic in-memory pseudo-parent for the SigmaChain
+/// bootstrap candidate at block 1. Never persisted; only consumed
+/// in-process by `generate_candidate` to fill `last_block_utxo_root`,
+/// `timestamp`, and the interlinks-extension seed (`update_interlinks`
+/// reaches the genesis branch via `is_genesis(prev_header)`).
+///
+/// Recipe (consensus-bearing — every node MUST agree byte-for-byte):
+///   parent_id        = [0; 32]
+///   ad_proofs_root   = [0; 32]
+///   transactions_root = [0; 32]
+///   extension_root   = [0; 32]
+///   state_root       = genesis_state_root (arg; comes from the
+///                       chain-spec `GenesisParams::state_digest` pin
+///                       via `view.state_root()`)
+///   timestamp        = 0
+///   n_bits           = encode_compact_bits(initial_difficulty)
+///   height           = 0
+///   votes            = [0; 3]
+///   unparsed_bytes   = empty
+///   version          = active params block_version (v2 on SigmaChain)
+///   solution         = Autolykos V2 { pk: identity, nonce: [0; 8] }
+fn synthesize_genesis_parent_header(
+    genesis_state_root: ergo_primitives::digest::ADDigest,
+    chain_config: &DifficultyParams,
+    active_params: &ergo_validation::ActiveProtocolParameters,
+) -> Result<Header, MiningError> {
+    use ergo_primitives::digest::{Digest32, ModifierId};
+    use ergo_primitives::group_element::GroupElement;
+    let n_bits = ergo_ser::difficulty::encode_compact_bits(
+        &num_bigint::BigUint::from_bytes_be(&chain_config.initial_difficulty),
+    );
+    Ok(Header {
+        version: active_params.block_version,
+        parent_id: ModifierId::from_bytes([0u8; 32]),
+        ad_proofs_root: Digest32::from_bytes([0u8; 32]),
+        transactions_root: Digest32::from_bytes([0u8; 32]),
+        state_root: genesis_state_root,
+        timestamp: 0,
+        extension_root: Digest32::from_bytes([0u8; 32]),
+        n_bits,
+        height: 0,
+        votes: [0u8; 3],
+        unparsed_bytes: Vec::new(),
+        solution: AutolykosSolution::V2 {
+            pk: GroupElement::from([0u8; 33]),
+            nonce: [0u8; 8],
+        },
+    })
 }
 
 fn load_epoch_headers<V: CandidateStateView>(
