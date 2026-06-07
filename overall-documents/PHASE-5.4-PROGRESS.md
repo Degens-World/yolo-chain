@@ -150,6 +150,28 @@ Tests assume:
 
 ---
 
+## Upstream (`arkadianet/ergo`) drift
+
+Our fork point is `1a68cd9b` (`v0.3.0 + 4 commits`, per [UPSTREAM.md](../07-sigmachain-node/UPSTREAM.md)). Upstream has since merged **PRs #7 through #15** (HEAD `08ee11e` as of 2026-06-07). The ones most worth pulling in next sync pass, ranked by relevance to Phase 5.4 work:
+
+- **#13** (`1e139b4`) `ergo-ser: drop v6 method-call tree-version gate` — **functionally already present in our fork** (types.rs:556 has the `_tree_version: u8` unused param, gate body removed). Doc comments differ, semantics match.
+- **#14** (`2e173cf`) `#13 follow-up: Scala oracle vectors + embedded-surface coverage` — NOT yet in our fork. Adds golden parse vectors under `test-vectors/scala/sigma/v6_methodcall_typeargs_v0_header/`, plus `decode_mode_routing` / `ergotrees_roundtrip` / evaluator-side coverage. Cleans up the `_tree_version` parameter (removes it entirely from both the function signature and the two `parse.rs` call sites). Consensus-bar evidence the upstream maintainer asked for; we should pull it.
+- **#7** (`8d3289a`) `Mining: minimal-first candidate publish kills the post-block 503 window` — directly relevant to the `/mining/candidate` 503s observed during fast mining; would quiet the operator UI log.
+- **#8** (`2585eb0`) `fix(ergo-node): survive digest-mode handshake, sync, and API seams` — not exercised by our single-node testnet but worth pulling for parity.
+- **#9** (`9e9f3dd`) `Mining: per-tip pristine AVL base cache collapses the 20-second candidate dry-run` — perf, not correctness; lower priority.
+- **#11** (`f16f308`) `surface node mode identity on the overview page + wire real mining flag` — touches the same dashboard files we rebranded in commit `c1bbcd4`; merge needs a 3-way reconcile.
+- **#12** (`9444640`) `Mining: single-step incremental advance of the dry-run base` — perf.
+- **#15** (`08ee11e`) `Scala-compat /emission/at + fix auth-layer capture` — API-surface addition.
+
+Recommended sync pass (separate task from Phase 5.4):
+1. Branch `upstream-sync-pr7-15` off `phase-5.4-yolodao-live` post-merge.
+2. Apply #14 first (test coverage for our existing #13-equivalent fix).
+3. Apply #7 (the 503 quieting maps cleanly onto the symptom we just documented).
+4. Apply #8, #9, #11, #12, #15 in order, reconciling the dashboard / mining-handle conflicts each time. SigmaChain-specific branches that landed in Phase 5 may rebase under each merge.
+5. Re-run the full workspace + the Phase 5.4 live suite.
+
+---
+
 ## Recommended next-session opener
 
 1. Boot node + unlock wallet + start miner (above).
