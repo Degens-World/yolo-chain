@@ -107,10 +107,18 @@ impl NodeClient {
         Ok(resp.status())
     }
 
-    /// Returns `Ok(Some(t))` on 200, `Ok(None)` on 404, `Err` otherwise.
+    /// Returns `Ok(Some(t))` on 200, `Ok(None)` on 404 and on the
+    /// indexer's transient 503 ("indexer-syncing"), `Err` otherwise.
     /// Used for "does this box/tx exist yet" polling. `with_auth`
     /// attaches the `api_key` header; some node routes (the indexer
     /// `/blockchain/*` family in particular) gate on it.
+    ///
+    /// The 503 path matters during high-throughput mining: when a new
+    /// block applies, the indexer briefly reports its own height as
+    /// equal to the target but with the `indexer-syncing` reason
+    /// (`tx is mined but I haven't refreshed the queryable view`).
+    /// Treating it as `None` keeps the caller's poll loop alive
+    /// instead of panicking on the wait_for_tx guard.
     fn get_json_optional<T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
@@ -122,7 +130,7 @@ impl NodeClient {
         }
         match req.call() {
             Ok(resp) => Ok(Some(resp.into_json::<T>()?)),
-            Err(ureq::Error::Status(404, _)) => Ok(None),
+            Err(ureq::Error::Status(404, _)) | Err(ureq::Error::Status(503, _)) => Ok(None),
             Err(ureq::Error::Status(status, response)) => {
                 let body = response.into_string().unwrap_or_default();
                 Err(NodeError::BadStatus { status, body })

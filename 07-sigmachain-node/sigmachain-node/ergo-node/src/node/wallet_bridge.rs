@@ -996,6 +996,17 @@ async fn build_unsigned_tx(
         let mut input_tokens_total: BTreeMap<[u8; 32], u64> = BTreeMap::new();
         let mut inputs: Vec<ergo_ser::input::UnsignedInput> =
             Vec::with_capacity(explicit_inputs.len());
+        // Rule 124 (`txMonotonicHeight`) is gated by `block_version >= 3`
+        // and rejects any output whose `creation_height` is below the max
+        // input `creation_height`. On SigmaChain (block_version 4) it's
+        // always active. `chain.tip_height()` reads a cached snapshot
+        // that can lag the wallet's UTXO scanner by several blocks under
+        // fast mining — if a freshly-scanned input box was created at a
+        // height past the cached tip, the naive `current_height` would
+        // reject. Bump it to `max(tip, max_input_creation_height)` so the
+        // produced output box always satisfies the rule regardless of
+        // which subsystem's view is fresher.
+        let mut max_input_creation_height: u32 = 0;
 
         for hex_id in explicit_inputs {
             let id: [u8; 32] = hex::decode(hex_id)
@@ -1011,6 +1022,10 @@ async fn build_unsigned_tx(
                 .checked_add(ergo_box.candidate.value)
                 .ok_or_else(|| WalletAdminError::Internal("input ERG overflow".into()))?;
 
+            if ergo_box.candidate.creation_height > max_input_creation_height {
+                max_input_creation_height = ergo_box.candidate.creation_height;
+            }
+
             for token in &ergo_box.candidate.tokens {
                 let entry = input_tokens_total
                     .entry(*token.token_id.as_bytes())
@@ -1025,6 +1040,7 @@ async fn build_unsigned_tx(
                 extension: ergo_ser::input::ContextExtension::empty(),
             });
         }
+        let current_height = current_height.max(max_input_creation_height);
 
         // Sum required outputs (payments + fee).
         let mut required_erg: u64 = fee;
