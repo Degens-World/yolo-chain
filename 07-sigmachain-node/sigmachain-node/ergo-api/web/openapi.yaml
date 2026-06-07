@@ -2,7 +2,7 @@ openapi: "3.0.2"
 
 info:
   version: "6.0.2"
-  title: Ergo Node API (Rust)
+  title: SigmaChain Node API (Rust)
   description: |
     OpenAPI spec inherited from the Scala reference node. The Rust
     node implements most of the Scala wire surface plus a small
