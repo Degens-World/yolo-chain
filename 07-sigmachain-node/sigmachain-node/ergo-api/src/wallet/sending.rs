@@ -28,7 +28,17 @@ pub struct AssetDto {
     pub amount: u64,
 }
 
-/// One payment target: address + nanoERG value + optional tokens.
+/// One payment target: address + nanoERG value + optional tokens + optional
+/// non-mandatory registers.
+///
+/// `additional_registers` mirrors Scala's `additionalRegisters` field on
+/// `PaymentRequest`. Keys are register identifiers (`"R4"` through `"R9"`)
+/// and values are hex-encoded per-register payload bytes — the same wire
+/// shape Scala's `ValueSerializer` emits inside the on-chain register
+/// block (sigma constant: type code + value data; or an expression
+/// opcode such as `CreateTuple` for tuple-typed registers). Register
+/// slots are densely packed from R4; supplying `{"R5": ...}` without R4
+/// is rejected, matching the on-chain encoding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentRequestDto {
@@ -36,6 +46,12 @@ pub struct PaymentRequestDto {
     pub value: u64,
     #[serde(default)]
     pub assets: Vec<AssetDto>,
+    /// Optional non-mandatory register block. Map key is `"R4"`..`"R9"`;
+    /// value is hex-encoded register payload bytes (Scala
+    /// `ValueSerializer` output for the typed value). `None` and an
+    /// empty map both mean "no registers".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additional_registers: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// Hex-encoded bytes of a signed transaction (binary via hex wire shape).

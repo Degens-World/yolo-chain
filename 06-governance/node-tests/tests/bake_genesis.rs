@@ -166,6 +166,7 @@ fn bake_yolodao_genesis_tokens() {
                 token_id: input.box_id.clone(),
                 amount: *amount,
             }],
+            additional_registers: None,
         };
         let tx_id = client
             .wallet_transaction_send_with_inputs(

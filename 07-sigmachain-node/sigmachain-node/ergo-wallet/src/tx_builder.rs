@@ -21,6 +21,11 @@ pub struct PaymentRequest {
     pub value: u64,
     /// Token id (32-byte mint box id) → amount.
     pub assets: BTreeMap<[u8; 32], u64>,
+    /// Non-mandatory registers R4-R9 attached to the output box.
+    /// `AdditionalRegisters::empty()` for plain pay-to-address outputs;
+    /// populated for contract boxes that read register-bound state
+    /// (governance counters, vault NFTs with locked-stake refs, etc.).
+    pub additional_registers: AdditionalRegisters,
 }
 
 /// Builds an `UnsignedTransaction` from payment requests.
@@ -90,7 +95,7 @@ impl<'a> UnsignedTxBuilder<'a> {
                     ergo_tree,
                     self.current_height,
                     tokens,
-                    AdditionalRegisters::empty(),
+                    r.additional_registers.clone(),
                 )
                 .map_err(|e| WalletError::TxBuild(format!("ErgoBoxCandidate (payment): {e:?}")))?,
             );

@@ -234,6 +234,7 @@ async fn generate_unsigned_emits_canonical_p2pk_recipient_tree() {
             address: recipient.clone(),
             value: 100_000_000, // 0.1 ERG
             assets: vec![],
+            additional_registers: None,
         }],
         inputs: None,
         data_inputs: None,

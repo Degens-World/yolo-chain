@@ -97,6 +97,7 @@ fn live_node_single_tx_round_trip() {
         address: change_address.clone(),
         value: SEND_VALUE,
         assets: vec![],
+        additional_registers: None,
     }];
     let tx_id = client
         .wallet_transaction_send(&requests)

@@ -170,6 +170,7 @@ fn setup_pair_1_creates_vault_and_reserve_boxes() {
             token_id: state_nft_1.clone(),
             amount: 1,
         }],
+        additional_registers: None,
     };
     let vault_tx = client
         .wallet_transaction_send(&[vault_request])
@@ -204,6 +205,7 @@ fn setup_pair_1_creates_vault_and_reserve_boxes() {
                 amount: initial_reserve_vyolo,
             },
         ],
+        additional_registers: None,
     };
     let reserve_tx = client
         .wallet_transaction_send(&[reserve_request])

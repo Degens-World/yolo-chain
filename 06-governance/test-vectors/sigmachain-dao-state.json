@@ -1,0 +1,48 @@
+{
+  "setup_tx_id": "02af5a74e3e5368235add7c2a0f9a56357c244308dec039ee21d0893877095b1",
+  "setup_height": 14889,
+  "counter": {
+    "box_id": "40c1c73c74de8a764ff1931ddc49f70b750b6e5d9c8455781f491d789eaf106c",
+    "value": 1000000,
+    "p2s_address": "3MRQ8WKbhtABf88bYmQVvDQNQun6RDzJwQbnX8xaqaMzrihnui6bV7WazGX5SNvN1iuBYAY9bAqchTrY8PmeiJxVNNwmbgCvqRARF3zPSrA22aw4auGVwXy89r7mrZA7rTKDWRD8ZPjWaVXGoMyHkfwPyPkd4kTHJwymRRcNFmNerxULUhCrmi1RfTGcSagd42Yw8SriSTpgYkrpjpwmnZhi6r4Xv7Z6fb1TNRec3jqhVZoRj15XntocTg3ZE6i22Q9qAw4fWcnbmjj7PBUtszZqZYbTb3wsyDaR9QiwfoeexukRqtKaJ3329t1kWbFjSaA9sAM62sRtaJfku6ShX1A3GNb5XLRWxad1sR2zTL3pw5CEeBygggK79c5PeXNzgUZf4tapkoMVzeD96fZoFf2eXkJURpUSmohjgkgx8KWqjpNngtZS4xDzNqa1RKL3AwaVy69LEJfhgwhHTb5qBV73XE3MYJ1WhTj1otdttuEYD8iJ1za2aXfx2e5HV6qCACygpcUDFaVtRMfvRywk9gYvNNsuWR3d7Pixa9oYhBy9h44nhVyqmzopzpx7XpfvCe5za83KugBbttfuu1pbMjqViGhFYqZdxcUhWjRr7norsqPTgnvHwvEYVShaEX7xmoCTMNawEXro1nG6ASoyovCkPGaV7zFDQxuKvq4EbqiEVgH1KtnbvYjiCqGvD6rDCPP9BXmdTEgWug2SxtcSZ7wfZGCiwAd7EQ8hWqro64LV5C3TxBwuFWoc8xgX79q1sRgMn1E9JRZXPVPk7dPJ35Eng2WFH2dsg79N6aVVNYWsxYyzS6mXpvz72ozEfSfR22XW6pkAWWLfFYKV1ZvcrzsXpZCsi1xG7xbZXSqgCSfGPAD9acZVTABMx2WcaVmft7UhQwe47FwtgLcNULam2MsqEoi2Yn4GYk3U4ReGzUQZkefTKEK6fdLY6mdK4TFrZYnaiWukqhqkfRqRcvUZZDu7FxtVf8GNMLwPFzXgzhNDxC1rx9xyLuHd3ZiwT4GDzQzojLzHipCeri2BtGfxy28Pnj25X93U7tYSCuAbhT67xGE9NoHQhfi6HitQ7xwrbWEw7yGAghFGCSBishKB6Ghhx3AdkeF4F4qS1Rf23Dwy3ZWywcYuJ2AWWRpPHanfTiFLjRrK4oEJa3sGfZCb8cbUTZbbQDQkdqH4NU9sCZtE5gLna1V3qa3CmZcnFAmn7EzawE2kP4SfnGvKD1MiUtXE8Hqj82ubDYVj2YhN5s92pDN1QZfGrTkP2rroQzigEBW6sLjXDokXRroC8XVu2gRGsbP3",
+    "tokens": [
+      {
+        "name": "COUNTER_NFT",
+        "token_id": "007830c62c813990d78c40f6ed61f0b093c5206637dd23f2dd4163ad1f9dc972",
+        "amount": 1
+      }
+    ],
+    "registers": [
+      {
+        "key": "R4",
+        "hex": "0580a8d6b907",
+        "description": "vote deadline (Long) = 1000000000"
+      },
+      {
+        "key": "R5",
+        "hex": "860205000500",
+        "description": "(proportion, votes_for) = (0L, 0L)"
+      },
+      {
+        "key": "R6",
+        "hex": "0e200000000000000000000000000000000000000000000000000000000000000000",
+        "description": "recipient ergotree hash (Coll[Byte], 32 zero bytes)"
+      },
+      {
+        "key": "R7",
+        "hex": "0500",
+        "description": "total votes (Long) = 0"
+      },
+      {
+        "key": "R8",
+        "hex": "0500",
+        "description": "initiation stake (Long) = 0"
+      },
+      {
+        "key": "R9",
+        "hex": "0500",
+        "description": "validation votes (Long) = 0"
+      }
+    ]
+  }
+}

@@ -206,6 +206,7 @@ fn full_send_flow_produces_tx_that_verifies_at_transaction_level() {
         to_ergo_tree: recv_ergo_tree_bytes.clone(),
         value: payment_value,
         assets: std::collections::BTreeMap::new(),
+        additional_registers: ergo_ser::register::AdditionalRegisters::empty(),
     };
     let builder = UnsignedTxBuilder {
         available_summaries: &summaries,
@@ -339,6 +340,7 @@ fn unsigned_tx_roundtrip_then_sign_verifies() {
             to_ergo_tree: recv_ergo_tree_bytes,
             value: 500_000_000,
             assets: std::collections::BTreeMap::new(),
+            additional_registers: ergo_ser::register::AdditionalRegisters::empty(),
         }])
         .expect("build");
 

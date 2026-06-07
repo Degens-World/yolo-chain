@@ -506,11 +506,15 @@ pub struct ChainStateAccessorImpl {
     db: Arc<redb::Database>,
     /// Lock-free reader for chain state (headers, UTXO, active params).
     reader: ergo_state::reader::ChainStoreReader,
-    /// Best full-block height at the time the accessor was constructed.
-    /// Updated lazily: for rescan bounds this value is recomputed via the
-    /// `read_tip` closure inside `rescan_full_rebuild`; for status reads
-    /// it's close enough.
-    tip_height: u32,
+    /// Boot-time best full-block height. Retained as a fallback for the
+    /// pre-genesis edge where `reader.committed_tip()` returns `None`
+    /// (no committed snapshot yet). The live path in [`tip_height`]
+    /// reads from the reader and ignores this field when available —
+    /// rule 124 (`txMonotonicHeight`) rejects an output whose
+    /// `creation_height` is below any input's, and a stale boot-time
+    /// snapshot can produce exactly that failure on any wallet box
+    /// scanned after boot.
+    tip_height_at_boot: u32,
     is_pruned: bool,
 }
 
@@ -520,7 +524,7 @@ impl ChainStateAccessorImpl {
         Self {
             db,
             reader,
-            tip_height,
+            tip_height_at_boot: tip_height,
             is_pruned,
         }
     }
@@ -538,7 +542,17 @@ impl ChainStateAccessor for ChainStateAccessorImpl {
     }
 
     fn tip_height(&self) -> u32 {
-        self.tip_height
+        // Read live from the committed-snapshot reader. Falls back to
+        // the boot-time snapshot only when no committed tip is
+        // available (very early bring-up). A cached boot-time value
+        // diverges from the chain tip block-by-block under live mining
+        // and silently breaks rule 124 (`txMonotonicHeight`) for any
+        // output the wallet builds against a freshly-scanned input —
+        // see [`Self::tip_height_at_boot`] for the failure mode.
+        match self.reader.committed_tip() {
+            Ok(Some((h, _))) => h,
+            _ => self.tip_height_at_boot,
+        }
     }
 
     fn is_pruned(&self) -> bool {
@@ -898,6 +912,91 @@ const MIN_FEE: u64 = 1_000_000;
 /// Minimum box value in nanoERG. Mirrors Scala's `BoxUtils.MinBoxValue`.
 const MIN_BOX_VALUE: u64 = 1_000_000;
 
+/// Decode an optional `additionalRegisters` map from a payment request DTO
+/// into a densely packed [`ergo_ser::register::AdditionalRegisters`] block.
+///
+/// `None` and an empty map both produce `AdditionalRegisters::empty()`.
+/// Otherwise the keys must be `"R4"`..`"R9"` (case-insensitive), and the
+/// populated slots must form a dense prefix starting at R4 — the on-chain
+/// encoding has no "gap" representation. Each value is hex-decoded, then
+/// parsed via [`ergo_ser::register::read_registers`] wrapped in a single
+/// register-count byte so the same expression-vs-constant routing the
+/// chain uses applies here.
+fn decode_additional_registers(
+    map: &Option<BTreeMap<String, String>>,
+) -> Result<ergo_ser::register::AdditionalRegisters, WalletAdminError> {
+    let Some(map) = map.as_ref() else {
+        return Ok(ergo_ser::register::AdditionalRegisters::empty());
+    };
+    if map.is_empty() {
+        return Ok(ergo_ser::register::AdditionalRegisters::empty());
+    }
+
+    // Resolve each "R4".."R9" key to its slot index (R4 = 0, R9 = 5),
+    // then sort ascending so the resulting block is densely packed.
+    let mut slots: Vec<(usize, &str, &str)> = Vec::with_capacity(map.len());
+    for (k, v) in map {
+        let slot = match k.to_ascii_uppercase().as_str() {
+            "R4" => 0usize,
+            "R5" => 1,
+            "R6" => 2,
+            "R7" => 3,
+            "R8" => 4,
+            "R9" => 5,
+            other => {
+                return Err(WalletAdminError::Internal(format!(
+                    "additionalRegisters: bad register id {other:?} (expected R4..R9)"
+                )));
+            }
+        };
+        slots.push((slot, k.as_str(), v.as_str()));
+    }
+    slots.sort_by_key(|(s, _, _)| *s);
+
+    // Enforce dense packing from R4.
+    for (i, (slot, key, _)) in slots.iter().enumerate() {
+        if *slot != i {
+            return Err(WalletAdminError::Internal(format!(
+                "additionalRegisters: non-dense slot for {key:?} \
+                 (got slot {slot}, expected {i}); R4..R9 must be contiguous"
+            )));
+        }
+    }
+
+    // Decode each register payload by prepending a 1-byte register count
+    // and reusing `read_registers`. This routes through the same opcode
+    // dispatch the on-chain decoder uses (plain Const for type <= 0x70,
+    // CreateTuple / ConcreteCollection for tuple-typed / collection-typed
+    // registers).
+    let mut registers = Vec::with_capacity(slots.len());
+    for (_, key, hex_payload) in &slots {
+        let payload = hex::decode(hex_payload).map_err(|e| {
+            WalletAdminError::Internal(format!(
+                "additionalRegisters[{key}]: hex decode: {e}"
+            ))
+        })?;
+        let mut framed = Vec::with_capacity(payload.len() + 1);
+        framed.push(1u8);
+        framed.extend_from_slice(&payload);
+        let mut r = ergo_primitives::reader::VlqReader::new(&framed);
+        let decoded = ergo_ser::register::read_registers(&mut r).map_err(|e| {
+            WalletAdminError::Internal(format!(
+                "additionalRegisters[{key}]: parse: {e:?}"
+            ))
+        })?;
+        if !r.is_empty() {
+            return Err(WalletAdminError::Internal(format!(
+                "additionalRegisters[{key}]: {} trailing byte(s) after register payload",
+                r.remaining()
+            )));
+        }
+        let mut entries = decoded.registers;
+        debug_assert_eq!(entries.len(), 1);
+        registers.push(entries.remove(0));
+    }
+    Ok(ergo_ser::register::AdditionalRegisters { registers })
+}
+
 /// Build an unsigned transaction from payment requests (the shared build path).
 ///
 /// `override_inputs` / `override_data_inputs`: hex box ids supplied by the
@@ -944,10 +1043,12 @@ async fn build_unsigned_tx(
                     Ok((id, a.amount))
                 })
                 .collect::<Result<_, WalletAdminError>>()?;
+            let additional_registers = decode_additional_registers(&r.additional_registers)?;
             Ok(ergo_wallet::tx_builder::PaymentRequest {
                 to_ergo_tree,
                 value: r.value,
                 assets,
+                additional_registers,
             })
         })
         .collect::<Result<_, WalletAdminError>>()?;
@@ -997,15 +1098,15 @@ async fn build_unsigned_tx(
         let mut inputs: Vec<ergo_ser::input::UnsignedInput> =
             Vec::with_capacity(explicit_inputs.len());
         // Rule 124 (`txMonotonicHeight`) is gated by `block_version >= 3`
-        // and rejects any output whose `creation_height` is below the max
-        // input `creation_height`. On SigmaChain (block_version 4) it's
-        // always active. `chain.tip_height()` reads a cached snapshot
-        // that can lag the wallet's UTXO scanner by several blocks under
-        // fast mining — if a freshly-scanned input box was created at a
-        // height past the cached tip, the naive `current_height` would
-        // reject. Bump it to `max(tip, max_input_creation_height)` so the
-        // produced output box always satisfies the rule regardless of
-        // which subsystem's view is fresher.
+        // and rejects any output whose `creation_height` is below the
+        // max input `creation_height`. On SigmaChain (block_version 4)
+        // it's always active. `chain.tip_height()` now reads the live
+        // committed tip, but the wallet's UTXO scanner can still be a
+        // few blocks ahead of the chain reader's committed snapshot
+        // under fast mining. Bump `current_height` to
+        // `max(tip, max_input_creation_height)` so the produced output
+        // box always satisfies the rule regardless of which subsystem's
+        // view is fresher.
         let mut max_input_creation_height: u32 = 0;
 
         for hex_id in explicit_inputs {
@@ -1119,7 +1220,7 @@ async fn build_unsigned_tx(
                     ergo_tree,
                     current_height,
                     tokens,
-                    ergo_ser::register::AdditionalRegisters::empty(),
+                    req.additional_registers.clone(),
                 )
                 .map_err(|e| {
                     WalletAdminError::Internal(format!("ErgoBoxCandidate (payment): {e:?}"))
@@ -3089,4 +3190,201 @@ async fn get_private_key_impl(
     let w = hex::encode(scalar_bytes);
 
     Ok(GetPrivateKeyResponse { w })
+}
+
+#[cfg(test)]
+mod additional_registers_decode_tests {
+    //! Coverage for [`decode_additional_registers`]: the wire-DTO → packed
+    //! `AdditionalRegisters` decoder used when payment requests carry
+    //! contract-bound state in R4-R9 (governance counter init, vault
+    //! bootstrap, etc.).
+    //!
+    //! Fixtures are constructed by writing a typed `AdditionalRegisters`
+    //! block through `ergo_ser::register::write_registers` and slicing
+    //! off the count byte — what remains is exactly the per-register
+    //! payload the decoder is supposed to round-trip.
+    use super::*;
+    use ergo_ser::register::{write_registers, AdditionalRegisters, RegisterValue};
+    use ergo_ser::sigma_type::SigmaType;
+    use ergo_ser::sigma_value::SigmaValue;
+
+    /// Helper: serialize a structured register block, return one hex
+    /// string per register holding only that register's payload (no
+    /// count byte, no inter-register framing).
+    fn payload_hex_per_register(regs: &AdditionalRegisters) -> Vec<String> {
+        let bytes = ergo_ser::register::split_register_bytes(&{
+            let mut w = ergo_primitives::writer::VlqWriter::new();
+            write_registers(&mut w, regs).unwrap();
+            w.result()
+        })
+        .unwrap();
+        bytes.into_iter().map(hex::encode).collect()
+    }
+
+    #[test]
+    fn none_input_yields_empty_block() {
+        let regs = decode_additional_registers(&None).unwrap();
+        assert_eq!(regs.count(), 0);
+    }
+
+    #[test]
+    fn empty_map_yields_empty_block() {
+        let regs = decode_additional_registers(&Some(BTreeMap::new())).unwrap();
+        assert_eq!(regs.count(), 0);
+    }
+
+    #[test]
+    fn single_r4_constant_round_trips() {
+        let expected = AdditionalRegisters {
+            registers: vec![RegisterValue {
+                tpe: SigmaType::SInt,
+                value: SigmaValue::Int(42),
+            }],
+        };
+        let hexes = payload_hex_per_register(&expected);
+        let mut map = BTreeMap::new();
+        map.insert("R4".to_string(), hexes[0].clone());
+        let decoded = decode_additional_registers(&Some(map)).unwrap();
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn mixed_types_dense_packing_round_trips() {
+        // Matches the shape of the YoloDAO counter genesis box:
+        // R4 = SInt (vote deadline placeholder), R5 = SLong (votes_for),
+        // R6 = SColl[SByte] (recipient hash), R7 = SLong (total votes).
+        let expected = AdditionalRegisters {
+            registers: vec![
+                RegisterValue {
+                    tpe: SigmaType::SInt,
+                    value: SigmaValue::Int(100_000),
+                },
+                RegisterValue {
+                    tpe: SigmaType::SLong,
+                    value: SigmaValue::Long(0),
+                },
+                RegisterValue {
+                    tpe: SigmaType::SColl(Box::new(SigmaType::SByte)),
+                    value: SigmaValue::Coll(ergo_ser::sigma_value::CollValue::Bytes(vec![0; 32])),
+                },
+                RegisterValue {
+                    tpe: SigmaType::SLong,
+                    value: SigmaValue::Long(0),
+                },
+            ],
+        };
+        let hexes = payload_hex_per_register(&expected);
+        let mut map = BTreeMap::new();
+        map.insert("R4".to_string(), hexes[0].clone());
+        map.insert("R5".to_string(), hexes[1].clone());
+        map.insert("R6".to_string(), hexes[2].clone());
+        map.insert("R7".to_string(), hexes[3].clone());
+        let decoded = decode_additional_registers(&Some(map)).unwrap();
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn lowercase_keys_are_accepted() {
+        let expected = AdditionalRegisters {
+            registers: vec![RegisterValue {
+                tpe: SigmaType::SInt,
+                value: SigmaValue::Int(7),
+            }],
+        };
+        let hexes = payload_hex_per_register(&expected);
+        let mut map = BTreeMap::new();
+        map.insert("r4".to_string(), hexes[0].clone());
+        let decoded = decode_additional_registers(&Some(map)).unwrap();
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn non_dense_starting_at_r5_is_rejected() {
+        let regs = AdditionalRegisters {
+            registers: vec![RegisterValue {
+                tpe: SigmaType::SInt,
+                value: SigmaValue::Int(1),
+            }],
+        };
+        let hexes = payload_hex_per_register(&regs);
+        let mut map = BTreeMap::new();
+        map.insert("R5".to_string(), hexes[0].clone());
+        let err = decode_additional_registers(&Some(map)).unwrap_err();
+        let WalletAdminError::Internal(msg) = err else {
+            panic!("expected Internal error, got {err:?}");
+        };
+        assert!(
+            msg.contains("non-dense"),
+            "wrong error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn gap_between_r4_and_r6_is_rejected() {
+        let regs = AdditionalRegisters {
+            registers: vec![
+                RegisterValue {
+                    tpe: SigmaType::SInt,
+                    value: SigmaValue::Int(1),
+                },
+                RegisterValue {
+                    tpe: SigmaType::SInt,
+                    value: SigmaValue::Int(2),
+                },
+            ],
+        };
+        let hexes = payload_hex_per_register(&regs);
+        let mut map = BTreeMap::new();
+        map.insert("R4".to_string(), hexes[0].clone());
+        map.insert("R6".to_string(), hexes[1].clone());
+        let err = decode_additional_registers(&Some(map)).unwrap_err();
+        let WalletAdminError::Internal(msg) = err else {
+            panic!("expected Internal error, got {err:?}");
+        };
+        assert!(msg.contains("non-dense"), "wrong error message: {msg}");
+    }
+
+    #[test]
+    fn unknown_register_id_is_rejected() {
+        let mut map = BTreeMap::new();
+        map.insert("R10".to_string(), "0400".to_string());
+        let err = decode_additional_registers(&Some(map)).unwrap_err();
+        let WalletAdminError::Internal(msg) = err else {
+            panic!("expected Internal error, got {err:?}");
+        };
+        assert!(msg.contains("R10"), "wrong error message: {msg}");
+    }
+
+    #[test]
+    fn bad_hex_is_rejected() {
+        let mut map = BTreeMap::new();
+        map.insert("R4".to_string(), "zz".to_string());
+        let err = decode_additional_registers(&Some(map)).unwrap_err();
+        let WalletAdminError::Internal(msg) = err else {
+            panic!("expected Internal error, got {err:?}");
+        };
+        assert!(msg.contains("hex decode"), "wrong error message: {msg}");
+    }
+
+    #[test]
+    fn trailing_bytes_in_payload_are_rejected() {
+        let regs = AdditionalRegisters {
+            registers: vec![RegisterValue {
+                tpe: SigmaType::SInt,
+                value: SigmaValue::Int(1),
+            }],
+        };
+        let mut hex_with_trailing = payload_hex_per_register(&regs)[0].clone();
+        hex_with_trailing.push_str("ff");
+        let mut map = BTreeMap::new();
+        map.insert("R4".to_string(), hex_with_trailing);
+        let err = decode_additional_registers(&Some(map)).unwrap_err();
+        let WalletAdminError::Internal(msg) = err else {
+            panic!("expected Internal error, got {err:?}");
+        };
+        assert!(
+            msg.contains("trailing"),
+            "wrong error message: {msg}"
+        );
+    }
 }

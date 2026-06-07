@@ -7,6 +7,7 @@
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod registers;
 
 pub use client::NodeClient;
 pub use config::TestConfig;

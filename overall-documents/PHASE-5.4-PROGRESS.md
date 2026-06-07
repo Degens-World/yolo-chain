@@ -1,8 +1,8 @@
 # Phase 5.4 — Progress Checkpoint
 
-**Date:** 2026-06-06  
-**Branch:** `phase-5.4-yolodao-live` (4 commits ahead of `phase-5.4-handoff-doc`)  
-**Status:** Milestones 1–3 complete + Milestone 4 prep landed. Chain at h≈8,610.
+**Date:** 2026-06-07 (updated)  
+**Branch:** `phase-5.4-yolodao-live` (4 commits + uncommitted Milestone 4 prep landed)  
+**Status:** Milestones 1–3 complete; Milestone 4 wallet-bridge blocker resolved + counter genesis test written (uncommitted, awaiting live-node validation). Chain at h≈8,610.
 
 This doc supersedes the "What's left" section of
 [PHASE-5.4-HANDOFF.md](PHASE-5.4-HANDOFF.md) only; the rest of that
@@ -47,29 +47,54 @@ still applies verbatim.
 4. `validation_keeps_proposal_at_qty_1_when_quorum_fails`
 5. `validation_uses_elevated_threshold_for_high_proportion_proposals`
 
-**Two infrastructure pieces still needed before any of the above can land:**
+**Infrastructure pieces:**
 
-#### A. Counter + initial-proposal genesis setup
-The counter box must exist on chain at "Phase 0 / no active proposal" state:
-- value: `1_000_000` (storage rent floor)
+#### A. `PaymentRequestDto`-with-registers patch — **LANDED (uncommitted)**
+
+Path 1 from the prior plan. `PaymentRequestDto` now carries an optional
+`additionalRegisters: Option<BTreeMap<String, String>>` field; keys are
+`"R4"`..`"R9"`, values are hex-encoded per-register payload bytes
+(`ValueSerializer` shape — same wire format the on-chain decoder reads).
+Wired through both `build_unsigned_tx` paths (override-inputs +
+auto-selection), with strict dense-packing enforcement and 10 unit
+tests covering the round-trips + every error path.
+
+Touched files:
+- `07-sigmachain-node/sigmachain-node/ergo-api/src/wallet/sending.rs` — new optional field on `PaymentRequestDto`.
+- `07-sigmachain-node/sigmachain-node/ergo-wallet/src/tx_builder.rs` — `PaymentRequest` carries `AdditionalRegisters`, builder threads it into the payment output candidate.
+- `07-sigmachain-node/sigmachain-node/ergo-node/src/node/wallet_bridge.rs` — new `decode_additional_registers` helper; both build paths use the per-request registers instead of hardcoding empty.
+- `06-governance/node-tests/src/{client.rs,registers.rs,lib.rs}` — client DTO mirrors the wire field; `registers.rs` exposes `slong_hex`, `slong_pair_hex`, `coll_byte_hex` backed by the node's own `ergo-ser` writers (path-dep).
+- Existing call sites updated mechanically: `wallet_admin_roundtrip`, `wallet_send_e2e`, `tx_builder_oracle`, `smoke`, `bake_genesis`, `setup_pair_1`, `deposit_redeem_pair_1`.
+
+Test status: workspace `cargo test` from `07-sigmachain-node/sigmachain-node`
+reports **3,860 passing, 0 failing** (+10 register-decode tests vs the
+3,850 baseline). `06-governance/node-tests` lib tests: **4 passing**
+(register-helper round-trips). The live-feature node-tests build
+clean under `cargo check --tests --features live`.
+
+#### B. Counter genesis box setup — **WRITTEN (uncommitted, not yet run against the node)**
+
+`06-governance/node-tests/tests/setup_dao_genesis.rs`:
+
+- script: counting.es test-windows variant (from `sigmachain-deployment-trees-test.json`)
+- value: `1_000_000`
 - tokens: `[(COUNTER_NFT, 1)]`
-- script: `counting.es` compiled (test-windows variant from `deployment-trees-test.json`)
-- registers:
-  - R4 (vote deadline): a height comfortably in the future so `isBeforeCounting` is true
-  - R5 (proportion, votes_for): `(0L, 0L)`
-  - R6 (recipient hash): `Coll[Byte]` of 32 zero bytes
-  - R7 (total votes): `0L`
-  - R8 (initiation stake): `0L`
-  - R9 (validation votes): `0L`
+- R4 = `Long(1_000_000_000)` — vote deadline; far past any plausible test height
+- R5 = `(Long, Long)` tuple `(0L, 0L)`
+- R6 = `Coll[Byte]` of 32 zero bytes
+- R7 = R8 = R9 = `Long(0)`
 
-**The blocker:** the wallet's `PaymentRequestDto` doesn't carry registers. Two paths:
-1. **Extend `PaymentRequestDto`** with an optional `additionalRegisters: Option<Map<String, String>>` field, decode in `wallet_bridge::build_unsigned_tx`. Mirrors what Scala's wallet supports. ~30 lines.
-2. **Custom tx construction** in test code — build the `UnsignedTransaction` manually with `ergo-ser` types (NOT `ergo-lib`; the wire formats differ on input encoding — see "Gotchas" below).
+Sends one tx via `/wallet/transaction/send`, waits for inclusion,
+cross-checks every register hex against what the indexer returned for
+the new box (catches any silent re-encoding drift), persists
+`06-governance/test-vectors/sigmachain-dao-state.json`.
 
-Path 1 is the cleanest and unblocks every subsequent contract test (treasury, counter, proposal, userVote, timeValidator all need register-bearing boxes). Recommend doing this BEFORE writing any 5.4.4+ test.
+Pre-flight refuses to run if `COUNTER_NFT` already sits in an unspent
+box (would burn the singleton on the next op).
 
-#### B. Per-voter `timeValidator` box bootstrap
-Each voter needs a `timeValidator.es`-guarded box holding their vYOLO stake + a `ValidVote NFT`. Same `PaymentRequestDto`-with-registers blocker; once A lands, this is mechanical.
+#### C. Per-voter `timeValidator` box bootstrap
+
+Each voter needs a `timeValidator.es`-guarded box holding their vYOLO stake + a `ValidVote NFT`. Now mechanical given (A) + the helpers in `registers.rs`.
 
 **Then the lifecycle test** drives the counter through:
 1. **Initiation** (Phase 1) — proposer tx: inputs = (counter box, vYOLO stake box, change box); outputs = (counter at phase 2 with `R4 = HEIGHT + votingWindow`, locked-stake box, proposal box at qty 1, change). vYOLO stake ≥ `initiationHurdle = 100_000 vYOLO`.
@@ -112,6 +137,8 @@ Separate from Phase 5.4 testing but documented in [PHASE-5.4-HANDOFF.md](PHASE-5
 6. **`/wallet/transaction/sign` rejects non-bare-P2PK inputs unless the prover gate is patched.** Already fixed (commit `e95a8de`), but if you ever see "input N has an unsupported script family," that gate has returned.
 
 7. **State-drift recovery.** After a deposit consumes the original vault box, the pair-state file on disk is stale. The deposit/redeem test handles this via `reconcile_pair_with_chain` — it queries `/blockchain/box/unspent/byTokenId/{state_nft}` (singleton NFT = one current holder). Mirror this pattern for any contract-box-tracking test.
+
+8. **`ChainStateAccessorImpl::tip_height` used to return a boot-time cached snapshot, not the live tip.** Fixed in the 2026-06-07 patch alongside the `additionalRegisters` work — `tip_height()` now reads `reader.committed_tip()` live and falls back to the boot value only when no committed snapshot exists. The old behaviour silently broke rule 124 (`txMonotonicHeight`) for any tx the wallet built against a box scanned after boot: `chain.tip_height()` would return the boot height, but the input box's `creation_height` could be hundreds of blocks higher, and the resulting output's `creation_height` would be below max input height. Surfaced by the first `setup_dao_genesis` attempt against a chain that had advanced from h=12348 (boot) to h=14651: `OutputCreationHeightBelowInputs { creation_height: 12348, max_input_height: 13661 }`. If you ever see this rejection again, the live read regressed.
 
 ---
 
@@ -176,8 +203,10 @@ Recommended sync pass (separate task from Phase 5.4):
 
 1. Boot node + unlock wallet + start miner (above).
 2. Run the existing live suite to sanity-check (`cargo test --features live` from `06-governance/node-tests/`). Everything in 5.4.1–5.4.3 should still pass.
-3. Land `PaymentRequestDto`-with-registers patch in `wallet_bridge` (the one infrastructure blocker for 5.4.4). Mirror Scala's `additionalRegisters` field.
-4. Write the counter + initial-proposal genesis setup test (`tests/setup_dao_genesis.rs`). Output the counter box id to `sigmachain-dao-state.json`.
-5. Tackle 5.4.4 tests in the order called out above.
+3. Run `setup_dao_genesis_creates_counter_box_at_phase_zero` (the new test). Expected: tx confirms in one block, the indexer reports R4-R9 matching the hex the test sent, `sigmachain-dao-state.json` lands under test-vectors. Failure modes worth watching for:
+   - tx rejected by the wallet self-verifier — likely a register-encoding shape mismatch; cross-check the per-register hex in the failing assertion against `ergo-ser/src/register.rs` test fixtures.
+   - tx accepted but `additionalRegisters` empty in the indexer view — the wire field rename or the wallet's output-construction path skipped the field; verify [wallet_bridge.rs:1118-1129](07-sigmachain-node/sigmachain-node/ergo-node/src/node/wallet_bridge.rs#L1118-L1129) and [tx_builder.rs:88-96](07-sigmachain-node/sigmachain-node/ergo-wallet/src/tx_builder.rs#L88-L96) use `req.additional_registers.clone()`.
+4. Commit the wallet patch + counter setup work on `phase-5.4-yolodao-live` once the operator confirms it works. Per the user's "no push before user tests" rule, leave the commit step to the operator.
+5. Tackle the 5.4.4 voting-lifecycle tests in the order called out above (initiation → counting → validation), starting from the counter box id in `sigmachain-dao-state.json`.
 
-The PR description for `phase-5.4-yolodao-live` should bundle commits 1–4 (the epoch fix, wallet patches, supporting changes, and live tests) as a single Phase 5.4.1–5.4.3 deliverable. Milestone 4+ work goes onto the same branch as additional commits or a new branch off the merge — operator's call.
+The PR description for `phase-5.4-yolodao-live` should bundle commits 1–4 (the epoch fix, wallet patches, supporting changes, and live tests) as a single Phase 5.4.1–5.4.3 deliverable. Milestone 4+ work (this patch + the genesis setup test + subsequent 5.4.4 lifecycle tests) goes onto the same branch as additional commits, or a new branch off the merge — operator's call.

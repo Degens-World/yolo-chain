@@ -264,6 +264,7 @@ fn run_half(
             token_id: state_nft_id.to_string(),
             amount: 1,
         }],
+        additional_registers: None,
     };
 
     // OUTPUTS(1): successor reserve.
@@ -280,6 +281,7 @@ fn run_half(
                 amount: new_reserve_vyolo,
             },
         ],
+        additional_registers: None,
     };
 
     // OUTPUTS(2): user-facing recipient. On deposit gets `amount`
@@ -292,12 +294,14 @@ fn run_half(
                 token_id: vyolo_id.to_string(),
                 amount,
             }],
+            additional_registers: None,
         }
     } else {
         PaymentRequestDto {
             address: change_address.to_string(),
             value: amount,
             assets: vec![],
+            additional_registers: None,
         }
     };
 

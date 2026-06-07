@@ -398,6 +398,14 @@ pub struct PaymentRequestDto {
     pub value: u64,
     #[serde(default)]
     pub assets: Vec<AssetDto>,
+    /// Optional non-mandatory register block. Map key is `"R4"`..`"R9"`;
+    /// value is hex-encoded register payload (per-register
+    /// `ValueSerializer` bytes — sigma constant header + value data, or
+    /// an expression opcode such as `CreateTuple` for tuple registers).
+    /// Mirrors the wallet `sending::PaymentRequestDto` field; `None`
+    /// preserves prior behaviour (no registers attached).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_registers: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

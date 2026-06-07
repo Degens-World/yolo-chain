@@ -47,6 +47,7 @@ fn erg_request(value: u64) -> PaymentRequest {
         to_ergo_tree: always_true_ergo_tree(),
         value,
         assets: BTreeMap::new(),
+        additional_registers: ergo_ser::register::AdditionalRegisters::empty(),
     }
 }
 
@@ -58,6 +59,7 @@ fn token_request(value: u64, token_id: u8, token_amount: u64) -> PaymentRequest 
         to_ergo_tree: always_true_ergo_tree(),
         value,
         assets,
+        additional_registers: ergo_ser::register::AdditionalRegisters::empty(),
     }
 }
 

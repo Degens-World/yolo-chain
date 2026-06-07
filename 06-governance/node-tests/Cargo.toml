@@ -29,5 +29,11 @@ thiserror = "1.0"
 blake2 = "0.10"
 bs58 = "0.5"
 ergo-lib = { version = "0.28", features = ["arbitrary"] }
+# Path-deps on the SigmaChain node's serialization crates so register
+# payloads emitted by these tests use exactly the same wire encoders
+# the on-chain decoder reads from. Avoids the subtle pitfalls of
+# hand-rolling type-code + zig-zag VLQ for tuple registers.
+ergo-ser = { path = "../../07-sigmachain-node/sigmachain-node/ergo-ser" }
+ergo-primitives = { path = "../../07-sigmachain-node/sigmachain-node/ergo-primitives" }
 
 [dev-dependencies]
