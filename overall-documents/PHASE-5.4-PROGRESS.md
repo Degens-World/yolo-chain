@@ -41,7 +41,7 @@ still applies verbatim.
 **Goal:** Walk the counter NFT through phases 1→3 of `counting.es` and advance a proposal box from qty 1 to qty 2 via real on-chain validation.
 
 **Tests called out by the original handoff (in priority order):**
-1. `proposal_initiation_advances_counter` — single happy-path tx that creates a proposal box at qty 1 and moves the counter into the voting phase
+1. `proposal_initiation_advances_counter` — **LANDED**, idempotent. Either drives a full Phase 0 → Phase 1 initiation tx (counter + stake reference + proposal-token funding + plain ERG funding → counter successor + proposal qty 1) OR adopts the existing on-chain state when the counter is already past Phase 0, cross-checking the contract-level invariants (`proposal.R4 == counter.R5`, `blake2b256(proposal.R5) == counter.R6`). Bootstraps a vYOLO-only stake reference box on first run and persists it for the lifecycle tests to reuse.
 2. `vote_counting_burns_vote_nfts_and_accumulates_tallies` — voter boxes consumed, vote NFTs burned in OUTPUTS, R7/R9 updated
 3. `validation_passes_proposal_to_qty_2_when_thresholds_met`
 4. `validation_keeps_proposal_at_qty_1_when_quorum_fails`

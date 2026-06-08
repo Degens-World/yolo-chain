@@ -1,8 +1,8 @@
 {
-  "setup_tx_id": "02af5a74e3e5368235add7c2a0f9a56357c244308dec039ee21d0893877095b1",
-  "setup_height": 14889,
+  "setup_tx_id": "abb4e9deadfbe127c7fcf1576d42025151b43e65e68a2165f08cc5dc87363fb6",
+  "setup_height": 18916,
   "counter": {
-    "box_id": "40c1c73c74de8a764ff1931ddc49f70b750b6e5d9c8455781f491d789eaf106c",
+    "box_id": "8698262aba61341e695890c4650b54167794a2ce8ccace053e156b20fd4a0a91",
     "value": 1000000,
     "p2s_address": "3MRQ8WKbhtABf88bYmQVvDQNQun6RDzJwQbnX8xaqaMzrihnui6bV7WazGX5SNvN1iuBYAY9bAqchTrY8PmeiJxVNNwmbgCvqRARF3zPSrA22aw4auGVwXy89r7mrZA7rTKDWRD8ZPjWaVXGoMyHkfwPyPkd4kTHJwymRRcNFmNerxULUhCrmi1RfTGcSagd42Yw8SriSTpgYkrpjpwmnZhi6r4Xv7Z6fb1TNRec3jqhVZoRj15XntocTg3ZE6i22Q9qAw4fWcnbmjj7PBUtszZqZYbTb3wsyDaR9QiwfoeexukRqtKaJ3329t1kWbFjSaA9sAM62sRtaJfku6ShX1A3GNb5XLRWxad1sR2zTL3pw5CEeBygggK79c5PeXNzgUZf4tapkoMVzeD96fZoFf2eXkJURpUSmohjgkgx8KWqjpNngtZS4xDzNqa1RKL3AwaVy69LEJfhgwhHTb5qBV73XE3MYJ1WhTj1otdttuEYD8iJ1za2aXfx2e5HV6qCACygpcUDFaVtRMfvRywk9gYvNNsuWR3d7Pixa9oYhBy9h44nhVyqmzopzpx7XpfvCe5za83KugBbttfuu1pbMjqViGhFYqZdxcUhWjRr7norsqPTgnvHwvEYVShaEX7xmoCTMNawEXro1nG6ASoyovCkPGaV7zFDQxuKvq4EbqiEVgH1KtnbvYjiCqGvD6rDCPP9BXmdTEgWug2SxtcSZ7wfZGCiwAd7EQ8hWqro64LV5C3TxBwuFWoc8xgX79q1sRgMn1E9JRZXPVPk7dPJ35Eng2WFH2dsg79N6aVVNYWsxYyzS6mXpvz72ozEfSfR22XW6pkAWWLfFYKV1ZvcrzsXpZCsi1xG7xbZXSqgCSfGPAD9acZVTABMx2WcaVmft7UhQwe47FwtgLcNULam2MsqEoi2Yn4GYk3U4ReGzUQZkefTKEK6fdLY6mdK4TFrZYnaiWukqhqkfRqRcvUZZDu7FxtVf8GNMLwPFzXgzhNDxC1rx9xyLuHd3ZiwT4GDzQzojLzHipCeri2BtGfxy28Pnj25X93U7tYSCuAbhT67xGE9NoHQhfi6HitQ7xwrbWEw7yGAghFGCSBishKB6Ghhx3AdkeF4F4qS1Rf23Dwy3ZWywcYuJ2AWWRpPHanfTiFLjRrK4oEJa3sGfZCb8cbUTZbbQDQkdqH4NU9sCZtE5gLna1V3qa3CmZcnFAmn7EzawE2kP4SfnGvKD1MiUtXE8Hqj82ubDYVj2YhN5s92pDN1QZfGrTkP2rroQzigEBW6sLjXDokXRroC8XVu2gRGsbP3",
     "tokens": [
@@ -15,33 +15,82 @@
     "registers": [
       {
         "key": "R4",
-        "hex": "0580a8d6b907",
-        "description": "vote deadline (Long) = 1000000000"
+        "hex": "05d2a702",
+        "description": "counter (adopted): adopted from chain"
       },
       {
         "key": "R5",
-        "hex": "860205000500",
-        "description": "(proportion, votes_for) = (0L, 0L)"
+        "hex": "860205c09a0c0500",
+        "description": "counter (adopted): adopted from chain"
       },
       {
         "key": "R6",
-        "hex": "0e200000000000000000000000000000000000000000000000000000000000000000",
-        "description": "recipient ergotree hash (Coll[Byte], 32 zero bytes)"
+        "hex": "0e20b7a02d7762859dfc23873531dc3d7f6a171061166bade8bd8fe95f1779662dee",
+        "description": "counter (adopted): adopted from chain"
       },
       {
         "key": "R7",
         "hex": "0500",
-        "description": "total votes (Long) = 0"
+        "description": "counter (adopted): adopted from chain"
       },
       {
         "key": "R8",
-        "hex": "0500",
-        "description": "initiation stake (Long) = 0"
+        "hex": "058080d287e2bc2d",
+        "description": "counter (adopted): adopted from chain"
       },
       {
         "key": "R9",
         "hex": "0500",
-        "description": "validation votes (Long) = 0"
+        "description": "counter (adopted): adopted from chain"
+      }
+    ]
+  },
+  "stake_reference": {
+    "box_id": "d776a324918941ef29682bf71682df0669ac75ea1de2b88f730eae86d92cb577",
+    "value": 1000000,
+    "vyolo_amount": 200000000000000
+  },
+  "proposal_box": {
+    "box_id": "e4c05329537c8d892783293ce3ab79f3472db39df1a530d58d9dd1d6607a0cbf",
+    "value": 1000000,
+    "p2s_address": "Lka3ce6FK3jooPdUegZK6Kw6j5xZV6HsZffBCDwfjNBJy78iNakxVibar5tFbLRmvFSrHR3pJi13ZxmxfPFGFJXjGSSEi3DLZudCuKS7jcEK959MA6naQJRNfxf8cfuNLtJFpWRP8W778pA512RPEAzzUGnVvFHNuNngffjQgdhGfHZvWUMMXCo8UWxsqpeQXC4wgEb5rpBf2PiZvJ8sq9MUF1oxvGVCaEC66EvFhUHZhrYsMrgnNabfQRXrjgiQWnCuXiST83yZfoimLVWSR1gvyzAZYoS3fdTj2s2HGuECif7H3ywpH3pEZRfhz6m7QCDoUr7H9HtWs5hUfAZQFN3TKveHTmm9XhQLhEPA8H5QVpMh9Y6L",
+    "tokens": [
+      {
+        "name": "PROPOSAL_TOKEN",
+        "token_id": "0085d50f8b951e5ed3f8e3879aeb4d4e7aa5b3768bf56386766831c511234a1f",
+        "amount": 1
+      }
+    ],
+    "registers": [
+      {
+        "key": "R4",
+        "hex": "860205c09a0c0500",
+        "description": "proposal (adopted): adopted from chain"
+      },
+      {
+        "key": "R5",
+        "hex": "0e240008cd03c95c7b3f2760adab4089ddf3d59fba152e94f7c0aa94463a5194e9bc3b4336d6",
+        "description": "proposal (adopted): adopted from chain"
+      },
+      {
+        "key": "R6",
+        "hex": "0502",
+        "description": "proposal (adopted): adopted from chain"
+      },
+      {
+        "key": "R7",
+        "hex": "04904e",
+        "description": "proposal (adopted): adopted from chain"
+      },
+      {
+        "key": "R8",
+        "hex": "04d2a702",
+        "description": "proposal (adopted): adopted from chain"
+      },
+      {
+        "key": "R9",
+        "hex": "04c6a702",
+        "description": "proposal (adopted): adopted from chain"
       }
     ]
   }

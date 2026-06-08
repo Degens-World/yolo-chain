@@ -81,8 +81,37 @@ impl NodeClient {
     /// Authenticated GET returning a raw `serde_json::Value`. Used by
     /// the YoloDAO tests where the indexer response shape is too rich
     /// to model exhaustively; the tests pick the fields they need.
+    ///
+    /// Retries transiently on the indexer's `503 indexer-syncing`
+    /// response — the indexer briefly serves 503s when a new block
+    /// has applied but the queryable view hasn't refreshed yet. Same
+    /// pattern as `get_json_optional`'s 503 handling, but here we
+    /// must produce a real value rather than `None`, so we sleep and
+    /// retry instead of returning early.
     pub fn raw_get_json_auth(&self, path: &str) -> Result<serde_json::Value> {
-        self.get_json_auth(path)
+        const MAX_ATTEMPTS: u32 = 12;
+        const BACKOFF_MS: u64 = 250;
+        let mut last_err: Option<NodeError> = None;
+        for attempt in 0..MAX_ATTEMPTS {
+            match self.get_json_auth::<serde_json::Value>(path) {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if let NodeError::BadStatus { status: 503, .. } = &e {
+                        last_err = Some(e);
+                        sleep(std::time::Duration::from_millis(
+                            BACKOFF_MS * (1 + attempt as u64),
+                        ));
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| {
+            NodeError::Invariant(format!(
+                "raw_get_json_auth({path}): {MAX_ATTEMPTS} retries exhausted"
+            ))
+        }))
     }
 
     fn post_json_auth<B: Serialize, T: for<'de> Deserialize<'de>>(
@@ -230,6 +259,28 @@ impl NodeClient {
             requests: requests.to_vec(),
             inputs: Some(inputs.to_vec()),
             data_inputs: None,
+            fee,
+        };
+        let resp: TxIdResponse = self.post_json_auth("/wallet/transaction/send", &body)?;
+        Ok(resp.tx_id)
+    }
+
+    /// POST /wallet/transaction/send with explicit input AND data-input
+    /// overrides. Phase 5.4.4 uses this for the counter-initiation tx,
+    /// which references a vYOLO stake box as `dataInputs(0)` while
+    /// consuming the counter box (and any wallet boxes carrying the
+    /// proposal token + fee ERG) as regular inputs.
+    pub fn wallet_transaction_send_full(
+        &self,
+        requests: &[PaymentRequestDto],
+        inputs: &[String],
+        data_inputs: &[String],
+        fee: Option<u64>,
+    ) -> Result<String> {
+        let body = TransactionSendRequest {
+            requests: requests.to_vec(),
+            inputs: Some(inputs.to_vec()),
+            data_inputs: Some(data_inputs.to_vec()),
             fee,
         };
         let resp: TxIdResponse = self.post_json_auth("/wallet/transaction/send", &body)?;

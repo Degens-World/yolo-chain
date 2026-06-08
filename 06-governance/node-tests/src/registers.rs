@@ -29,6 +29,15 @@ pub fn slong_hex(value: i64) -> String {
     })
 }
 
+/// Per-register payload hex for an `Int` value (constant form, type
+/// code `0x04` followed by ZigZag-VLQ value bytes).
+pub fn sint_hex(value: i32) -> String {
+    payload_hex(RegisterValue {
+        tpe: SigmaType::SInt,
+        value: SigmaValue::Int(value),
+    })
+}
+
 /// Per-register payload hex for a `(Long, Long)` tuple. Emitted as a
 /// `CreateTuple` expression (opcode `0x86`) to match the on-chain
 /// encoding for tuple-typed registers.
@@ -93,6 +102,17 @@ mod tests {
             let reg = parse_single(&hex);
             assert_eq!(reg.tpe, SigmaType::SLong);
             assert_eq!(reg.value, SigmaValue::Long(v));
+        }
+    }
+
+    #[test]
+    fn sint_round_trips() {
+        let cases: &[i32] = &[0, 1, -1, i32::MAX, i32::MIN, 5000, 100_000];
+        for &v in cases {
+            let hex = sint_hex(v);
+            let reg = parse_single(&hex);
+            assert_eq!(reg.tpe, SigmaType::SInt);
+            assert_eq!(reg.value, SigmaValue::Int(v));
         }
     }
 
