@@ -46,19 +46,17 @@ fn erg_request(value: u64) -> PaymentRequest {
     PaymentRequest {
         to_ergo_tree: always_true_ergo_tree(),
         value,
-        assets: BTreeMap::new(),
+        assets: Vec::new(),
         additional_registers: ergo_ser::register::AdditionalRegisters::empty(),
     }
 }
 
 /// Payment request carrying one token.
 fn token_request(value: u64, token_id: u8, token_amount: u64) -> PaymentRequest {
-    let mut assets = BTreeMap::new();
-    assets.insert([token_id; 32], token_amount);
     PaymentRequest {
         to_ergo_tree: always_true_ergo_tree(),
         value,
-        assets,
+        assets: vec![([token_id; 32], token_amount)],
         additional_registers: ergo_ser::register::AdditionalRegisters::empty(),
     }
 }

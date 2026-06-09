@@ -13,14 +13,25 @@ use ergo_ser::transaction::UnsignedTransaction;
 use std::collections::BTreeMap;
 
 /// A single payment the builder must include as an output.
+///
+/// `assets` is an **ordered** list: token order in the output box
+/// matches the iteration order here. Some contracts (notably
+/// counting.es phase2's voter-box check) read tokens positionally,
+/// so a sorted-by-id map would silently produce the wrong shape when
+/// the caller-intended slot 0 token has a lexicographically larger
+/// id than the slot 1 token. Callers should dedupe before
+/// constructing (the wire→internal conversion in `wallet_bridge`
+/// does this by accumulating duplicate ids into the first
+/// occurrence's amount, preserving the first occurrence's position).
 #[derive(Debug, Clone)]
 pub struct PaymentRequest {
     /// ErgoTree bytes of the recipient's script.
     pub to_ergo_tree: Vec<u8>,
     /// Value to send in nanoERG.
     pub value: u64,
-    /// Token id (32-byte mint box id) → amount.
-    pub assets: BTreeMap<[u8; 32], u64>,
+    /// Ordered token list. Each entry is `(token_id, amount)`. The
+    /// output box token slot indices match this vector's indices.
+    pub assets: Vec<([u8; 32], u64)>,
     /// Non-mandatory registers R4-R9 attached to the output box.
     /// `AdditionalRegisters::empty()` for plain pay-to-address outputs;
     /// populated for contract boxes that read register-bound state
@@ -65,7 +76,7 @@ impl<'a> UnsignedTxBuilder<'a> {
             total_erg = total_erg
                 .checked_add(r.value)
                 .ok_or_else(|| WalletError::TxBuild("erg overflow".into()))?;
-            for (&id, &amt) in &r.assets {
+            for &(id, amt) in &r.assets {
                 let entry = total_tokens.entry(id).or_insert(0);
                 *entry = entry
                     .checked_add(amt)
@@ -88,7 +99,7 @@ impl<'a> UnsignedTxBuilder<'a> {
         for r in requests {
             let ergo_tree = parse_ergo_tree(&r.to_ergo_tree)
                 .map_err(|e| WalletError::TxBuild(format!("decode payment ergo_tree: {e}")))?;
-            let tokens = assets_to_tokens(&r.assets);
+            let tokens = ordered_assets_to_tokens(&r.assets);
             output_candidates.push(
                 ErgoBoxCandidate::new(
                     r.value,
@@ -176,11 +187,27 @@ fn parse_ergo_tree(bytes: &[u8]) -> Result<ergo_ser::ergo_tree::ErgoTree, String
 }
 
 /// Convert a `BTreeMap<[u8; 32], u64>` assets map into the `Vec<Token>`
-/// form that `ErgoBoxCandidate::new` expects.
+/// form that `ErgoBoxCandidate::new` expects. Used for change-tokens
+/// (sourced from box selection, where dedupe-sum semantics are
+/// canonical and per-token-id order doesn't matter — change is
+/// residual leftover).
 fn assets_to_tokens(assets: &BTreeMap<[u8; 32], u64>) -> Vec<Token> {
     assets
         .iter()
         .map(|(&id, &amt)| Token {
+            token_id: Digest32::from_bytes(id),
+            amount: amt,
+        })
+        .collect()
+}
+
+/// Convert an **ordered** `Vec<([u8; 32], u64)>` assets list into the
+/// `Vec<Token>` form. Preserves the caller's token order — required
+/// when the output box's contract reads tokens positionally.
+fn ordered_assets_to_tokens(assets: &[([u8; 32], u64)]) -> Vec<Token> {
+    assets
+        .iter()
+        .map(|&(id, amt)| Token {
             token_id: Digest32::from_bytes(id),
             amount: amt,
         })

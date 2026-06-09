@@ -287,6 +287,34 @@ impl NodeClient {
         Ok(resp.tx_id)
     }
 
+    /// POST /wallet/transaction/generateUnsigned — build only, no sign,
+    /// no submit. Returns the unsigned tx hex. Used as a diagnostic
+    /// when send fails at sign time: lets the caller inspect exactly
+    /// what the wallet would have signed.
+    pub fn wallet_transaction_generate_unsigned(
+        &self,
+        requests: &[PaymentRequestDto],
+        inputs: &[String],
+        data_inputs: &[String],
+        fee: Option<u64>,
+    ) -> Result<String> {
+        let body = TransactionSendRequest {
+            requests: requests.to_vec(),
+            inputs: Some(inputs.to_vec()),
+            data_inputs: Some(data_inputs.to_vec()),
+            fee,
+        };
+        let resp: serde_json::Value =
+            self.post_json_auth("/wallet/transaction/generateUnsigned", &body)?;
+        resp.get("unsignedTx")
+            .and_then(|t| t.get("bytes"))
+            .and_then(|b| b.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                NodeError::Invariant("generateUnsigned response missing unsignedTx.bytes".into())
+            })
+    }
+
     /// GET /wallet/boxes/unspent — paged list of the wallet's unspent
     /// boxes. The default page size is small (50); the bake helper
     /// asks for `limit=200` to land enough fresh coinbase boxes in

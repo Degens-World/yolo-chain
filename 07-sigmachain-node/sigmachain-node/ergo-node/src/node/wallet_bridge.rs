@@ -1030,19 +1030,32 @@ async fn build_unsigned_tx(
                     .map_err(|e| {
                         WalletAdminError::Internal(format!("bad address {}: {e:?}", r.address))
                     })?;
-            let assets: BTreeMap<[u8; 32], u64> = r
-                .assets
-                .iter()
-                .map(|a| {
-                    let id = hex::decode(&a.token_id)
-                        .ok()
-                        .and_then(|v| v.try_into().ok())
-                        .ok_or_else(|| {
-                            WalletAdminError::Internal(format!("bad token_id: {}", a.token_id))
-                        })?;
-                    Ok((id, a.amount))
-                })
-                .collect::<Result<_, WalletAdminError>>()?;
+            // Preserve caller-supplied token order. Duplicate ids
+            // are accumulated into the FIRST occurrence's amount and
+            // the duplicate slot is dropped — keeps the implicit
+            // dedupe behaviour the BTreeMap path used to provide,
+            // but doesn't reorder the surviving slots. Contracts that
+            // read tokens positionally (counting.es phase2, etc.)
+            // require this.
+            let mut assets: Vec<([u8; 32], u64)> = Vec::with_capacity(r.assets.len());
+            for a in &r.assets {
+                let id: [u8; 32] = hex::decode(&a.token_id)
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or_else(|| {
+                        WalletAdminError::Internal(format!("bad token_id: {}", a.token_id))
+                    })?;
+                if let Some(existing) = assets.iter_mut().find(|(eid, _)| *eid == id) {
+                    existing.1 = existing.1.checked_add(a.amount).ok_or_else(|| {
+                        WalletAdminError::Internal(format!(
+                            "token amount overflow accumulating duplicate {}",
+                            a.token_id
+                        ))
+                    })?;
+                } else {
+                    assets.push((id, a.amount));
+                }
+            }
             let additional_registers = decode_additional_registers(&r.additional_registers)?;
             Ok(ergo_wallet::tx_builder::PaymentRequest {
                 to_ergo_tree,
@@ -1150,7 +1163,7 @@ async fn build_unsigned_tx(
             required_erg = required_erg
                 .checked_add(req.value)
                 .ok_or_else(|| WalletAdminError::Internal("output ERG overflow".into()))?;
-            for (&id, &amt) in &req.assets {
+            for &(id, amt) in &req.assets {
                 let entry = required_tokens.entry(id).or_insert(0);
                 *entry = entry
                     .checked_add(amt)
@@ -1206,10 +1219,11 @@ async fn build_unsigned_tx(
                 ergo_ser::ergo_tree::read_ergo_tree(&mut r)
                     .map_err(|e| WalletAdminError::Internal(format!("payment ergo_tree: {e:?}")))?
             };
+            // Preserve caller token order — see `PaymentRequest.assets` doc.
             let tokens = req
                 .assets
                 .iter()
-                .map(|(&id, &amt)| ergo_ser::token::Token {
+                .map(|&(id, amt)| ergo_ser::token::Token {
                     token_id: ergo_primitives::digest::Digest32::from_bytes(id),
                     amount: amt,
                 })
