@@ -1,8 +1,8 @@
 {
-  "setup_tx_id": "934108a57bba28611d613c885cbb25ba2eb51211476c479080f6b2fe1ec2c4d4",
-  "setup_height": 20185,
+  "setup_tx_id": "5917cbfc54eec3dfc444e5d5c58b5855f422e190ab9beeca2eebe1df9cbe8804",
+  "setup_height": 23304,
   "counter": {
-    "box_id": "8dcdd367d2b1098f646eb4025f1409fbc205d5a6bbbf736a1bbc15370816b97d",
+    "box_id": "699fc98b3eaf168c65b5bed261c75a4a0e1316a5450cfeaa4154f30fcc337d36",
     "value": 1000000,
     "p2s_address": "3MRQ8WKbhtABf88bYmQVvDQNQun6RDzJwQbnX8xaqaMzrihnui6bV7WazGX5SNvN1iuBYAY9bAqchTrY8PmeiJxVNNwmbgCvqRARF3zPSrA22aw4auGVwXy89r7mrZA7rTKDWRD8ZPjWaVXGoMyHkfwPyPkd4kTHJwymRRcNFmNerxULUhCrmi1RfTGcSagd42Yw8SriSTpgYkrpjpwmnZhi6r4Xv7Z6fb1TNRec3jqhVZoRj15XntocTg3ZE6i22Q9qAw4fWcnbmjj7PBUtszZqZYbTb3wsyDaR9QiwfoeexukRqtKaJ3329t1kWbFjSaA9sAM62sRtaJfku6ShX1A3GNb5XLRWxad1sR2zTL3pw5CEeBygggK79c5PeXNzgUZf4tapkoMVzeD96fZoFf2eXkJURpUSmohjgkgx8KWqjpNngtZS4xDzNqa1RKL3AwaVy69LEJfhgwhHTb5qBV73XE3MYJ1WhTj1otdttuEYD8iJ1za2aXfx2e5HV6qCACygpcUDFaVtRMfvRywk9gYvNNsuWR3d7Pixa9oYhBy9h44nhVyqmzopzpx7XpfvCe5za83KugBbttfuu1pbMjqViGhFYqZdxcUhWjRr7norsqPTgnvHwvEYVShaEX7xmoCTMNawEXro1nG6ASoyovCkPGaV7zFDQxuKvq4EbqiEVgH1KtnbvYjiCqGvD6rDCPP9BXmdTEgWug2SxtcSZ7wfZGCiwAd7EQ8hWqro64LV5C3TxBwuFWoc8xgX79q1sRgMn1E9JRZXPVPk7dPJ35Eng2WFH2dsg79N6aVVNYWsxYyzS6mXpvz72ozEfSfR22XW6pkAWWLfFYKV1ZvcrzsXpZCsi1xG7xbZXSqgCSfGPAD9acZVTABMx2WcaVmft7UhQwe47FwtgLcNULam2MsqEoi2Yn4GYk3U4ReGzUQZkefTKEK6fdLY6mdK4TFrZYnaiWukqhqkfRqRcvUZZDu7FxtVf8GNMLwPFzXgzhNDxC1rx9xyLuHd3ZiwT4GDzQzojLzHipCeri2BtGfxy28Pnj25X93U7tYSCuAbhT67xGE9NoHQhfi6HitQ7xwrbWEw7yGAghFGCSBishKB6Ghhx3AdkeF4F4qS1Rf23Dwy3ZWywcYuJ2AWWRpPHanfTiFLjRrK4oEJa3sGfZCb8cbUTZbbQDQkdqH4NU9sCZtE5gLna1V3qa3CmZcnFAmn7EzawE2kP4SfnGvKD1MiUtXE8Hqj82ubDYVj2YhN5s92pDN1QZfGrTkP2rroQzigEBW6sLjXDokXRroC8XVu2gRGsbP3",
     "tokens": [
@@ -15,33 +15,33 @@
     "registers": [
       {
         "key": "R4",
-        "hex": "0580a8d6b907",
-        "description": "vote deadline reset = 1000000000"
+        "hex": "059aec02",
+        "description": "vote deadline = HEIGHT+window = 23309"
       },
       {
         "key": "R5",
-        "hex": "860205000500",
-        "description": "(proportion, votes_for) reset = (0L, 0L)"
+        "hex": "860205c09a0c0500",
+        "description": "(proportion, votes_for) = (100000L, 0L)"
       },
       {
         "key": "R6",
-        "hex": "0e200000000000000000000000000000000000000000000000000000000000000000",
-        "description": "recipient hash reset = 32 zero bytes"
+        "hex": "0e20b7a02d7762859dfc23873531dc3d7f6a171061166bade8bd8fe95f1779662dee",
+        "description": "recipient ergotree hash"
       },
       {
         "key": "R7",
         "hex": "0500",
-        "description": "total votes = 0 (REQUIRED by counterReset)"
+        "description": "total votes = 0L"
       },
       {
         "key": "R8",
-        "hex": "0500",
-        "description": "initiation stake reset = 0L"
+        "hex": "058080d287e2bc2d",
+        "description": "initiation stake = 100000000000000L (>= hurdle)"
       },
       {
         "key": "R9",
         "hex": "0500",
-        "description": "validation votes = 0 (REQUIRED by counterReset)"
+        "description": "validation votes = 0L"
       }
     ]
   },
@@ -51,7 +51,7 @@
     "vyolo_amount": 200000000000000
   },
   "proposal_box": {
-    "box_id": "6ca0c00a33135d1209a8ef28f7aca1df8bd1273336ab001d298cdf01784c9cd7",
+    "box_id": "04395377cf8e6023013f74fbd07ee01759e6aace5839eae7824c878cc5e53612",
     "value": 1000000,
     "p2s_address": "Lka3ce6FK3jooPdUegZK6Kw6j5xZV6HsZffBCDwfjNBJy78iNakxVibar5tFbLRmvFSrHR3pJi13ZxmxfPFGFJXjGSSEi3DLZudCuKS7jcEK959MA6naQJRNfxf8cfuNLtJFpWRP8W778pA512RPEAzzUGnVvFHNuNngffjQgdhGfHZvWUMMXCo8UWxsqpeQXC4wgEb5rpBf2PiZvJ8sq9MUF1oxvGVCaEC66EvFhUHZhrYsMrgnNabfQRXrjgiQWnCuXiST83yZfoimLVWSR1gvyzAZYoS3fdTj2s2HGuECif7H3ywpH3pEZRfhz6m7QCDoUr7H9HtWs5hUfAZQFN3TKveHTmm9XhQLhEPA8H5QVpMh9Y6L",
     "tokens": [
@@ -65,33 +65,53 @@
       {
         "key": "R4",
         "hex": "860205c09a0c0500",
-        "description": "proposal (adopted): adopted from chain"
+        "description": "(proportion, 0L) = (100000L, 0L)"
       },
       {
         "key": "R5",
         "hex": "0e240008cd03c95c7b3f2760adab4089ddf3d59fba152e94f7c0aa94463a5194e9bc3b4336d6",
-        "description": "proposal (adopted): adopted from chain"
+        "description": "recipient ergotree raw bytes"
       },
       {
         "key": "R6",
         "hex": "0502",
-        "description": "proposal (adopted): adopted from chain"
+        "description": "validationHeight sentinel = 1 (must equal counter NFT qty)"
       },
       {
         "key": "R7",
         "hex": "04904e",
-        "description": "proposal (adopted): adopted from chain"
+        "description": "supportBps = 5000 (50%)"
       },
       {
         "key": "R8",
-        "hex": "04ceb902",
-        "description": "proposal (adopted): adopted from chain"
+        "hex": "049aec02",
+        "description": "votingWindowEnd (off-chain metadata) = 23309"
       },
       {
         "key": "R9",
-        "hex": "04c2b902",
-        "description": "proposal (adopted): adopted from chain"
+        "hex": "0488ec02",
+        "description": "discussionDeadline (off-chain metadata) = 23300"
       }
     ]
-  }
+  },
+  "voters": [
+    {
+      "box_id": "55b38a364bb9387aeaaa8292ae264a4492872c4ed634c03e4bdfdafd6a5b36b5",
+      "value": 1000000,
+      "vyolo_power": 10,
+      "yes": true
+    },
+    {
+      "box_id": "8ebcc326a2c5d0e995d26ef318959c21a0f4bff12157495d0ca8f121bc57cc55",
+      "value": 1000000,
+      "vyolo_power": 10,
+      "yes": true
+    },
+    {
+      "box_id": "4b414bc55c1d772c1f98e47e52290ce4604986cf3bc8f752ba31cffc7b518a6e",
+      "value": 1000000,
+      "vyolo_power": 5,
+      "yes": false
+    }
+  ]
 }

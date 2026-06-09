@@ -67,7 +67,11 @@ const MIN_BOX_VALUE: u64 = 1_000_000;
 
 /// Setup tx fee — leaves headroom for wallet-side init-cost on a
 /// register-bearing multi-output tx.
-const SETUP_FEE: u64 = 1_000_000;
+/// Setup-tx fee — starts well above the prior session's bumped value
+/// so a fresh submit replaces any stale initiation tx still parked
+/// in the mempool. The outer retry loop doubles on each round, so the
+/// effective ceiling reaches >2 billion nanoERG after 8 doublings.
+const SETUP_FEE: u64 = 50_000_000;
 
 // ---- Persisted state shapes (matching setup_dao_genesis output) ----
 
@@ -349,18 +353,28 @@ fn proposal_initiation_advances_counter() {
     ];
     let data_inputs = vec![stake_ref.box_id.clone()];
 
-    // Try R4 = tip + offset + votingWindow for offset ∈ {1, 0, 2, -1, 3, -2, 4}.
-    // Probes which delta the wallet's contract HEIGHT actually has
-    // from `/info fullHeight`. Documentation says +1 (pre-header height
-    // = committed_tip + 1) but the first attempts above showed +1
-    // fails on a non-mining chain — so the truth is empirically
-    // somewhere else. Pick whichever offset the contract accepts.
-    let height_offsets: [i64; 7] = [1, 0, 2, -1, 3, -2, 4];
-    let mut last_error: Option<String> = None;
-    let mut tx_id: Option<String> = None;
+    // Try R4 = tip + offset + votingWindow with empirically-confirmed
+    // offset=4 first (see commit Phase 5.4.4 prep: HEIGHT-offset
+    // discovery). `/info fullHeight` lags `committed_tip` by ~3 (status
+    // struct caches) and the wallet's pre-header height adds +1, so
+    // HEIGHT_sign = `/info` + 4 with a moving chain. Sweep ±2 in case
+    // the lag drifts under load. The outer fee-bump loop re-enters
+    // here from scratch when a submitted tx fails to mine within the
+    // window (R4 went stale before miner picked it up); each outer
+    // round doubles the fee so the replacement evicts our own pending
+    // tx in the mempool.
+    let height_offsets: [i64; 7] = [4, 5, 3, 6, 2, 7, 1];
+    let max_outer_attempts: u32 = 15;
+    let mut current_fee: u64 = SETUP_FEE;
     let mut counter_registers: Vec<RegisterEntry> = Vec::new();
     let mut proposal_registers: Vec<RegisterEntry> = Vec::new();
     let mut counter_r4_value: i64 = 0;
+    let mut tx_id_out: Option<String> = None;
+    let mut tx_body_out: Option<serde_json::Value> = None;
+    'outer: for outer_attempt in 1..=max_outer_attempts {
+        eprintln!("outer round {outer_attempt}: fee={current_fee}");
+        let mut last_error: Option<String> = None;
+        let mut tx_id: Option<String> = None;
     for (attempt, offset) in height_offsets.iter().enumerate() {
         let attempt = attempt as u32 + 1;
         let tip_height: i64 = client
@@ -474,7 +488,7 @@ fn proposal_initiation_advances_counter() {
             &[counter_successor, proposal_output],
             &inputs,
             &data_inputs,
-            Some(SETUP_FEE),
+            Some(current_fee),
         ) {
             Ok(id) => {
                 eprintln!(
@@ -486,8 +500,23 @@ fn proposal_initiation_advances_counter() {
             }
             Err(e) => {
                 let s = e.to_string();
-                if s.contains("TrivialProp(false)") {
-                    eprintln!("attempt {attempt}: phase1 false at offset={offset}; trying next offset...");
+                // Both `TrivialProp(false)` (sign-time contract reduction)
+                // and `script_failed` (submit-time mempool re-eval) are
+                // retryable: they both indicate R4 didn't match HEIGHT at
+                // some evaluation point. A block can mine between sign
+                // and submit and flip one or both checks.
+                if s.contains("TrivialProp(false)")
+                    || s.contains("script_failed")
+                    || s.contains("double_spend_loser")
+                {
+                    let cause = if s.contains("TrivialProp(false)") {
+                        "sign-time TrivialProp"
+                    } else if s.contains("script_failed") {
+                        "submit-time script_failed"
+                    } else {
+                        "mempool double_spend_loser"
+                    };
+                    eprintln!("attempt {attempt}: retry-able failure at offset={offset} ({cause})");
                     last_error = Some(s);
                     continue;
                 }
@@ -495,17 +524,52 @@ fn proposal_initiation_advances_counter() {
             }
         }
     }
-    let tx_id = tx_id.unwrap_or_else(|| {
-        panic!(
-            "initiation tx rejected at all {} attempted height offsets. \
-             Most likely failure isn't an off-by-one HEIGHT but something else \
-             (counterPreserved, valuePreserved, hasEnoughStake, ...). Last error: {}",
-            height_offsets.len(),
-            last_error.unwrap_or_default()
-        )
+        let Some(tid) = tx_id else {
+            eprintln!(
+                "outer round {outer_attempt}: all {} offsets rejected at fee={current_fee}; bumping fee. Last error: {}",
+                height_offsets.len(),
+                last_error.as_deref().unwrap_or("none")
+            );
+            current_fee *= 2;
+            continue 'outer;
+        };
+        eprintln!("submitted initiation tx_id={tid}; waiting up to 15s for inclusion...");
+        // Short bounded wait. Fast-mining testnet → inclusion happens
+        // within 1-2 blocks if it's going to happen at all. If the
+        // contract goes stale before the miner picks our tx, the
+        // outer loop bumps the fee and resubmits with a fresh tip.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let body = loop {
+            match client.transaction_by_id(&tid) {
+                Ok(Some(body)) => break Some(body),
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        break None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+                Err(e) => panic!("transaction_by_id: {e:?}"),
+            }
+        };
+        match body {
+            Some(b) => {
+                tx_id_out = Some(tid);
+                tx_body_out = Some(b);
+                break 'outer;
+            }
+            None => {
+                eprintln!(
+                    "outer round {outer_attempt}: tx {tid} not mined within 60s; bumping fee and resubmitting with fresh tip."
+                );
+                current_fee *= 2;
+                continue 'outer;
+            }
+        }
+    }
+    let tx_id = tx_id_out.unwrap_or_else(|| {
+        panic!("initiation tx never mined after {max_outer_attempts} outer rounds")
     });
-    eprintln!("submitted initiation tx_id={tx_id}");
-    let tx_body = client.wait_for_tx(&tx_id).expect("initiation tx inclusion");
+    let tx_body = tx_body_out.expect("body set alongside tx_id_out");
     let inclusion_height = tx_body
         .get("inclusionHeight")
         .and_then(|v| v.as_u64())
